@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+.pytest_cache/
+
+# Data and Lake
+data/yellow_tripdata_*.parquet
+data/.broker_*
+lake/
+lake_*/
+broker_*/
+*.tmp
+*.duckdb
+*.duckdb.wal
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

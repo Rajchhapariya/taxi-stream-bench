@@ -1,0 +1,8 @@
+{
+  "source_url": "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2024-01.parquet",
+  "pinned_sha256": "c4d59da7bbc8abaeeeb1727947ee93d9891a71acb42854bd80db1571b2030510",
+  "actual_sha256": "c4d59da7bbc8abaeeeb1727947ee93d9891a71acb42854bd80db1571b2030510",
+  "file_size_bytes": 49961641,
+  "verified_at_utc": "2026-10-29T16:11:07.794691+00:00",
+  "target_path": "data\\yellow_tripdata_2024-01.parquet"
+}
