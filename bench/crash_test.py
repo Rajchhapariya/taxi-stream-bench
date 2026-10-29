@@ -1,217 +1,221 @@
-"""Crash injection test harness.
+"""Crash injection benchmark: at-least-once versus effectively-once.
 
-Kills the sink process with SIGKILL / TerminateProcess 10 times per run
-across 3 random seeds for both delivery modes, then checks DuckDB for duplicate
-and missing row_id entries against the producer's accepted count.
+Per run: stage N accepted trips on the topic, start the sink, hard-kill it (SIGKILL, or
+TerminateProcess on Windows) at random moments 10 times, restarting it after each kill, then
+run one uninjected sink until the topic is drained. Afterwards the lake is compared with the
+row_ids the producer put on the topic:
+  duplicate rows = rows in the lake minus distinct row_ids in the lake
+  missing rows   = produced row_ids that are not in the lake
+
+Configurations
+  at-least-once                  Mode A: write the file, then commit the offset to the broker.
+  effectively-once               Mode B: offset-range file names, atomic rename, DuckDB manifest,
+                                 resume from DuckDB offsets, and delete files the manifest does
+                                 not list on restart.
+  effectively-once-no-reconcile  Mode B exactly as the build spec words it: temp files are deleted
+                                 on restart but a renamed file missing from the manifest is kept.
+
+Variants
+  sigkill-only            only the random kills. The window between the file write and the offset
+                          record is tens of milliseconds, so most kills miss it.
+  sigkill+boundary-crash  the same kills, plus each batch has an 8 percent chance of the process
+                          dying inside that window. The injected exit skips all cleanup.
+  ...+timer-batches       as above with a 0.02 s batch timer, so most batches are closed by the
+                          timer and their offset ranges depend on timing. A replay then produces
+                          different file names from the batch that was interrupted.
 """
 
 import argparse
 import glob
-import json
 import os
 import random
 import shutil
 import subprocess
 import sys
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
-import duckdb
-
-from pipeline.broker import LocalBrokerEngine
+from bench.common import (BASE_DIR, DATA_PATH, TrialBudget, clear_partial, lake_row_ids, lake_stats,
+                          load_partial, produced_row_ids, save_partial, write_result)
 from pipeline.producer import run_producer
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_PATH = os.path.join(BASE_DIR, "data", "yellow_tripdata_2024-01.parquet")
-RESULTS_DIR = os.path.join(BASE_DIR, "results")
+CONFIGS: List[Tuple[str, str, bool]] = [
+    ("at-least-once", "at-least-once", True),
+    ("effectively-once", "effectively-once", True),
+    ("effectively-once-no-reconcile", "effectively-once", False),
+]
+# (name, boundary crash probability, batch timer in seconds, records per run)
+VARIANTS: List[Tuple[str, float, float, int]] = [
+    ("sigkill-only", 0.0, 0.5, 30000),
+    ("sigkill+boundary-crash", 0.08, 0.5, 30000),
+    ("sigkill+boundary-crash+timer-batches", 0.08, 0.05, 8000),
+]
+TOPIC = "trips_crash"
 
 
-def run_single_crash_experiment(
-    mode: str,
-    seed: int,
-    num_records: int = 50000,
-    batch_size: int = 1000,
-    num_kills: int = 10,
-) -> Dict[str, Any]:
-    print(f"\n--- Crash Run: mode={mode}, seed={seed}, kills={num_kills} ---")
+def run_single_crash_experiment(config: Tuple[str, str, bool], variant: Tuple[str, float, float, int], seed: int,
+                                batch_size: int, num_kills: int) -> Dict[str, Any]:
+    cfg_name, mode, reconcile = config
+    var_name, crash_prob, batch_timeout, num_records = variant
+    tag = f"{cfg_name}_{var_name}_s{seed}".replace("+", "-")
+    print(f"\n--- {cfg_name} | {var_name} | seed {seed} | {num_kills} kills ---", flush=True)
 
-    random.seed(seed)
-
-    lake_dir = os.path.join(BASE_DIR, "lake_crash", f"{mode}_s{seed}")
-    broker_state_dir = os.path.join(BASE_DIR, "lake_crash", f"{mode}_s{seed}_broker")
+    rng = random.Random(seed)
+    lake_dir = os.path.join(BASE_DIR, "lake_crash", tag)
+    broker_dir = os.path.join(BASE_DIR, "lake_crash", tag + "_broker")
     state_db = os.path.join(lake_dir, "sink_state.duckdb")
+    for d in (lake_dir, broker_dir):
+        shutil.rmtree(d, ignore_errors=True)
+        os.makedirs(d, exist_ok=True)
 
-    if os.path.exists(lake_dir):
-        shutil.rmtree(lake_dir, ignore_errors=True)
-    if os.path.exists(broker_state_dir):
-        shutil.rmtree(broker_state_dir, ignore_errors=True)
-
-    os.makedirs(lake_dir, exist_ok=True)
-    os.makedirs(broker_state_dir, exist_ok=True)
-
-    os.environ["LOCAL_BROKER_DIR"] = broker_state_dir
+    os.environ["LOCAL_BROKER_DIR"] = broker_dir
     env = os.environ.copy()
     env["PYTHONPATH"] = BASE_DIR
-    env["LOCAL_BROKER_DIR"] = broker_state_dir
+    env["LOCAL_BROKER_DIR"] = broker_dir
 
-    print(f"Staging {num_records:,} records in local broker...")
-    prod_summary = run_producer(
-        source_path=DATA_PATH,
-        topic="trips_crash",
-        max_records=num_records,
-        force_local=True,
-        save_stats=None,
-    )
-    total_produced = prod_summary["accepted_and_produced"]
+    prod = run_producer(source_path=DATA_PATH, topic=TOPIC, max_records=num_records,
+                        force_local=True, save_stats=None)
+    produced_ids = produced_row_ids(broker_dir, TOPIC)
 
-    def launch_sink(crash_prob: float = 0.08):
+    launches = {"n": 0}
+
+    def launch(prob: float) -> subprocess.Popen:
+        launches["n"] += 1
         cmd = [
-            sys.executable,
-            "-u",
-            "-m", "pipeline.sink",
-            "--mode", mode,
-            "--lake-dir", lake_dir,
-            "--state-db", state_db,
-            "-B", str(batch_size),
-            "-T", "0.5",
-            "--topic", "trips_crash",
-            "--crash-prob", str(crash_prob),
-            "--force-local",
+            sys.executable, "-u", "-m", "pipeline.sink", "--mode", mode,
+            "--lake-dir", lake_dir, "--state-db", state_db,
+            "-B", str(batch_size), "-T", str(batch_timeout), "--topic", TOPIC, "--force-local",
+            "--crash-prob", str(prob), "--crash-seed", str(seed * 1000 + launches["n"]),
         ]
-        return subprocess.Popen(
-            cmd,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        if not reconcile:
+            cmd.append("--no-reconcile")
+        return subprocess.Popen(cmd, cwd=BASE_DIR, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    current_proc = launch_sink()
+    proc = launch(crash_prob)
+    kills_delivered = 0
+    exits_before_kill = 0
+    injected_exits = 0
 
-    for kill_i in range(1, num_kills + 1):
-        # Stagger kill intervals between 80ms and 350ms to catch active writes
-        sleep_duration = random.uniform(0.08, 0.35)
-        time.sleep(sleep_duration)
-
-        if current_proc.poll() is None:
-            print(f"Kill {kill_i}/{num_kills}: terminating sink (PID {current_proc.pid})")
-            current_proc.kill()
-            try:
-                current_proc.wait(timeout=2.0)
-            except subprocess.TimeoutExpired:
-                pass
-            time.sleep(0.15)
+    for _ in range(num_kills):
+        deadline = time.time() + rng.uniform(0.3, 1.2)
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                # the sink ended by itself (injected crash, or it drained the topic): restart it
+                exits_before_kill += 1
+                if proc.returncode in (42, 43, 44):
+                    injected_exits += 1
+                proc = launch(crash_prob)
+            time.sleep(0.01)
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=5)
+            kills_delivered += 1
         else:
-            print(f"Kill {kill_i}/{num_kills}: sink exited early (code {current_proc.returncode})")
+            exits_before_kill += 1
+            if proc.returncode in (42, 43, 44):
+                injected_exits += 1
+        proc = launch(crash_prob)
 
-        current_proc = launch_sink(crash_prob=0.08)
-
-    # Let the final sink process drain remaining records
-    print("All kills fired. Waiting for sink to drain queue...")
+    # Final run: no injection, runs until the topic is drained and the sink exits on its own.
+    proc.kill()
+    proc.wait(timeout=5)
+    final = launch(0.0)
     try:
-        stdout, stderr = current_proc.communicate(timeout=25.0)
+        final.wait(timeout=240)
+        drain_completed = final.returncode == 0
     except subprocess.TimeoutExpired:
-        current_proc.kill()
-        stdout, stderr = current_proc.communicate()
+        final.kill()
+        final.wait(timeout=5)
+        drain_completed = False
 
-    # Query Parquet lake to measure duplicate and missing row_ids
-    norm_lake = lake_dir.replace("\\", "/")
-    pattern = f"{norm_lake}/*/*.parquet"
-
-    parquet_files = glob.glob(os.path.join(lake_dir, "**", "*.parquet"), recursive=True)
-    con = duckdb.connect()
-
-    if parquet_files:
-        stats = con.execute(f"""
-            SELECT 
-                count(*) as total_rows,
-                count(distinct row_id) as unique_rows,
-                count(*) - count(distinct row_id) as duplicate_rows,
-                min(row_id) as min_row,
-                max(row_id) as max_row
-            FROM read_parquet('{pattern}')
-        """).fetchone()
-
-        total_in_lake = stats[0]
-        unique_rows = stats[1]
-        duplicate_rows = stats[2]
-        missing_rows = max(0, total_produced - unique_rows)
-    else:
-        total_in_lake = 0
-        unique_rows = 0
-        duplicate_rows = 0
-        missing_rows = total_produced
-
-    con.close()
-
+    stats = lake_stats(lake_dir)
+    lake_ids = lake_row_ids(lake_dir)
     result = {
-        "mode": mode,
+        "config": cfg_name,
+        "variant": var_name,
         "seed": seed,
-        "kills_attempted": num_kills,
-        "total_produced": total_produced,
-        "total_in_lake": total_in_lake,
-        "unique_rows": unique_rows,
-        "duplicate_rows": duplicate_rows,
-        "missing_rows": missing_rows,
-        "file_count": len(parquet_files),
+        "kills_requested": num_kills,
+        "kills_delivered": kills_delivered,
+        "exits_before_kill": exits_before_kill,
+        "injected_exits": injected_exits,
+        "sink_launches": launches["n"],
+        "drain_completed": drain_completed,
+        "total_produced": prod["accepted_and_produced"],
+        "distinct_produced_ids": len(produced_ids),
+        "total_in_lake": stats["rows"],
+        "unique_in_lake": stats["unique_row_ids"],
+        "duplicate_rows": stats["rows"] - stats["unique_row_ids"],
+        "missing_rows": len(produced_ids - lake_ids),
+        "unexpected_rows": len(lake_ids - produced_ids),
+        "file_count": stats["files"],
     }
-
-    print(f"Result [{mode} seed={seed}]: Lake={total_in_lake:,} | Dups={duplicate_rows:,} | Missing={missing_rows:,} | Files={len(parquet_files)}")
+    print(f"  lake={result['total_in_lake']:,} dup={result['duplicate_rows']:,} "
+          f"missing={result['missing_rows']:,} kills={kills_delivered} injected={injected_exits} "
+          f"drained={drain_completed}", flush=True)
     return result
 
 
-def run_full_crash_suite(
-    seeds: List[int] = [42, 100, 2024],
-    num_kills: int = 10,
-    records_per_run: int = 50000,
-) -> Dict[str, Any]:
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    all_results = []
+def summarise(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for cfg, _, _ in CONFIGS:
+        for var, _, _, _ in VARIANTS:
+            rs = [r for r in runs if r["config"] == cfg and r["variant"] == var]
+            if not rs:
+                continue
+            n = len(rs)
+            out[f"{cfg} | {var}"] = {
+                "runs": n,
+                "mean_duplicate_rows": round(sum(r["duplicate_rows"] for r in rs) / n, 2),
+                "max_duplicate_rows": max(r["duplicate_rows"] for r in rs),
+                "mean_missing_rows": round(sum(r["missing_rows"] for r in rs) / n, 2),
+                "total_kills_delivered": sum(r["kills_delivered"] for r in rs),
+                "total_injected_exits": sum(r["injected_exits"] for r in rs),
+                "all_drains_completed": all(r["drain_completed"] for r in rs),
+            }
+    return out
 
-    for mode in ["at-least-once", "effectively-once"]:
-        for seed in seeds:
-            res = run_single_crash_experiment(
-                mode=mode,
-                seed=seed,
-                num_records=records_per_run,
-                num_kills=num_kills,
-            )
-            all_results.append(res)
 
-    def compute_summary(mode_str: str) -> Dict[str, Any]:
-        runs = [r for r in all_results if r["mode"] == mode_str]
-        n = len(runs)
-        return {
-            "runs_evaluated": n,
-            "mean_duplicate_rows": round(sum(r["duplicate_rows"] for r in runs) / n, 2),
-            "mean_missing_rows": round(sum(r["missing_rows"] for r in runs) / n, 2),
-            "mean_files": round(sum(r["file_count"] for r in runs) / n, 1),
-        }
-
-    suite_summary = {
-        "seeds": seeds,
-        "kills_per_run": num_kills,
-        "mode_a_at_least_once": compute_summary("at-least-once"),
-        "mode_b_effectively_once": compute_summary("effectively-once"),
-        "all_runs": all_results,
-    }
-
-    out_path = os.path.join(RESULTS_DIR, "crash_benchmark.json")
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(suite_summary, f, indent=2)
-
-    print(f"\nCrash test suite finished. Saved to {out_path}")
-    return suite_summary
+def run_full_crash_suite(seeds: List[int], num_kills: int, batch_size: int,
+                         max_new: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    partial = load_partial("crash")
+    runs: List[Dict[str, Any]] = partial.get("runs", [])
+    done = {(r["config"], r["variant"], r["seed"]) for r in runs}
+    budget = TrialBudget(max_new)
+    for variant in VARIANTS:
+        for config in CONFIGS:
+            for seed in seeds:
+                if (config[0], variant[0], seed) in done:
+                    continue
+                if not budget.take():
+                    print(f"\nStopped after budget; {len(runs)} runs saved. Run again to continue.")
+                    return None
+                runs.append(run_single_crash_experiment(config, variant, seed, batch_size, num_kills))
+                save_partial("crash", {"runs": runs})
+    doc = write_result("crash_benchmark.json", {
+        "parameters": {
+            "seeds": seeds, "kills_per_run": num_kills,
+            "batch_size": batch_size, "commit_delay_s": 0.02,
+            "variants": {v[0]: {"boundary_crash_probability": v[1], "batch_timeout_s": v[2], "records_per_run": v[3]} for v in VARIANTS},
+        },
+        "summary": summarise(runs),
+        "runs": runs,
+    }, force_local=True)
+    clear_partial("crash")
+    print("\nSaved results/crash_benchmark.json")
+    return doc
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Crash injection benchmark harness.")
-    parser.add_argument("--seeds", type=int, nargs="+", default=[42, 100, 2024], help="Random seeds")
-    parser.add_argument("--kills", type=int, default=10, help="Forced kills per run")
-    parser.add_argument("--records", type=int, default=50000, help="Test rows produced per run")
+    parser = argparse.ArgumentParser(description="Crash injection benchmark.")
+    parser.add_argument("--seeds", type=int, nargs="+", default=[42, 100, 2024])
+    parser.add_argument("--kills", type=int, default=10)
+    parser.add_argument("--batch-size", type=int, default=1000)
+    parser.add_argument("--max-new", type=int, default=None, help="Stop after N new runs; rerun to resume")
+    parser.add_argument("--fresh", action="store_true", help="Discard saved partial runs")
     args = parser.parse_args()
-
-    run_full_crash_suite(seeds=args.seeds, num_kills=args.kills, records_per_run=args.records)
+    if args.fresh:
+        clear_partial("crash")
+    run_full_crash_suite(args.seeds, args.kills, args.batch_size, args.max_new)
 
 
 if __name__ == "__main__":

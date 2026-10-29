@@ -1,150 +1,114 @@
-"""Small-files problem and compaction benchmark.
+"""Small-files problem: query time and file count before and after compaction.
 
-Writes many small micro-batch files into the lake to reproduce the small-files problem,
-measures DuckDB query performance, runs the compaction job, and measures query performance again.
+The sink writes micro-batches of B rows per partition, so the lake fills with small files. Row
+counts are measured from the lake itself (the first version reported the requested count, and the
+sink had in fact written about a twelfth of it). Compaction must leave the row count and the set of
+distinct row_ids unchanged, and the run fails if it does not. Each query is timed 5 times after one
+warm-up run and the median is kept.
 """
 
 import argparse
-import glob
-import json
 import os
 import shutil
-import sys
+import statistics
 import time
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import duckdb
 
+from bench.common import BASE_DIR, DATA_PATH, lake_stats, write_result
 from pipeline.compaction import compact_lake
 from pipeline.producer import run_producer
 from pipeline.queries import query_avg_fare_per_distance, query_hourly_trips, query_top_10_pairs
 from pipeline.sink import SinkConsumer
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_PATH = os.path.join(BASE_DIR, "data", "yellow_tripdata_2024-01.parquet")
-RESULTS_DIR = os.path.join(BASE_DIR, "results")
+TOPIC = "trips_compact"
+QUERIES = [
+    ("hourly_trips_per_zone", query_hourly_trips),
+    ("avg_fare_per_distance_bucket", query_avg_fare_per_distance),
+    ("top_10_zone_pairs", query_top_10_pairs),
+]
 
 
-def run_compaction_benchmark(records: int = 15000, micro_batch_size: int = 50) -> Dict[str, Any]:
-    print(f"\n--- Compaction Benchmark (records={records:,}, batch={micro_batch_size}) ---")
-
-    test_lake = os.path.join(BASE_DIR, "lake_compaction_bench")
-    test_broker = os.path.join(BASE_DIR, "lake_compaction_broker")
-    state_db = os.path.join(test_lake, "sink_state.duckdb")
-
-    if os.path.exists(test_lake):
-        shutil.rmtree(test_lake, ignore_errors=True)
-    if os.path.exists(test_broker):
-        shutil.rmtree(test_broker, ignore_errors=True)
-
-    os.environ["LOCAL_BROKER_DIR"] = test_broker
-    topic = "trips_compact"
-
-    print("Staging records into local broker...")
-    prod_summary = run_producer(
-        source_path=DATA_PATH,
-        topic=topic,
-        max_records=records,
-        force_local=True,
-        save_stats=None,
-    )
-
-    print("Flushing micro-batches to create small files...")
-    sink = SinkConsumer(
-        mode="effectively-once",
-        batch_size=micro_batch_size,
-        batch_timeout=0.01,
-        lake_dir=test_lake,
-        state_db_path=state_db,
-        topic=topic,
-        force_local=True,
-    )
-    sink.run(max_messages=records, max_seconds=30.0)
-
-    # Count files and size before compaction
-    before_files = glob.glob(os.path.join(test_lake, "**", "*.parquet"), recursive=True)
-    before_size_bytes = sum(os.path.getsize(f) for f in before_files)
-    before_count = len(before_files)
-    print(f"Before Compaction: {before_count} files ({before_size_bytes / 1024 / 1024:.2f} MB)")
-
+def time_queries(lake: str) -> Dict[str, float]:
     con = duckdb.connect()
-
-    # Query times before compaction
-    _, q1_before = query_hourly_trips(test_lake, con)
-    _, q2_before = query_avg_fare_per_distance(test_lake, con)
-    _, q3_before = query_top_10_pairs(test_lake, con)
-    total_before = q1_before + q2_before + q3_before
-
-    # Run compaction
-    print("Running compaction...")
-    t_comp_start = time.perf_counter()
-    comp_result = compact_lake(lake_dir=test_lake, state_db_path=state_db)
-    compaction_duration = time.perf_counter() - t_comp_start
-
-    # Count files and size after compaction
-    after_files = glob.glob(os.path.join(test_lake, "**", "*.parquet"), recursive=True)
-    after_size_bytes = sum(os.path.getsize(f) for f in after_files)
-    after_count = len(after_files)
-    print(f"After Compaction: {after_count} files ({after_size_bytes / 1024 / 1024:.2f} MB)")
-
-    # Query times after compaction
-    _, q1_after = query_hourly_trips(test_lake, con)
-    _, q2_after = query_avg_fare_per_distance(test_lake, con)
-    _, q3_after = query_top_10_pairs(test_lake, con)
-    total_after = q1_after + q2_after + q3_after
-
+    out = {}
+    for name, fn in QUERIES:
+        fn(lake, con)  # warm-up
+        runs = [fn(lake, con)[1] * 1000.0 for _ in range(5)]
+        out[name] = round(statistics.median(runs), 2)
     con.close()
+    return out
 
-    speedup = total_before / max(0.0001, total_after)
 
-    summary = {
-        "files_before": before_count,
-        "files_after": after_count,
-        "size_before_mb": round(before_size_bytes / 1024 / 1024, 2),
-        "size_after_mb": round(after_size_bytes / 1024 / 1024, 2),
-        "compaction_time_sec": round(compaction_duration, 3),
-        "query_results": {
-            "q1_hourly_trips": {
-                "before_ms": round(q1_before * 1000, 2),
-                "after_ms": round(q1_after * 1000, 2),
-                "speedup": round(q1_before / max(0.0001, q1_after), 2),
-            },
-            "q2_avg_fare": {
-                "before_ms": round(q2_before * 1000, 2),
-                "after_ms": round(q2_after * 1000, 2),
-                "speedup": round(q2_before / max(0.0001, q2_after), 2),
-            },
-            "q3_top_pairs": {
-                "before_ms": round(q3_before * 1000, 2),
-                "after_ms": round(q3_after * 1000, 2),
-                "speedup": round(q3_before / max(0.0001, q3_after), 2),
-            },
-            "total_queries": {
-                "before_ms": round(total_before * 1000, 2),
-                "after_ms": round(total_after * 1000, 2),
-                "overall_speedup": round(speedup, 2),
-            },
-        },
+def run_compaction_trial(records: int, micro_batch: int) -> Dict[str, Any]:
+    lake = os.path.join(BASE_DIR, "lake_compaction_bench")
+    broker_dir = os.path.join(BASE_DIR, "lake_compaction_broker")
+    for d in (lake, broker_dir):
+        shutil.rmtree(d, ignore_errors=True)
+    os.environ["LOCAL_BROKER_DIR"] = broker_dir
+
+    prod = run_producer(source_path=DATA_PATH, topic=TOPIC, max_records=records, force_local=True, save_stats=None)
+    sink = SinkConsumer(mode="effectively-once", batch_size=micro_batch, batch_timeout=5.0, lake_dir=lake,
+                        state_db_path=os.path.join(lake, "sink_state.duckdb"), topic=TOPIC, force_local=True)
+    sink.run()
+
+    before = lake_stats(lake)
+    if before["rows"] != prod["accepted_and_produced"] or before["unique_row_ids"] != before["rows"]:
+        raise RuntimeError(f"Lake does not hold the produced rows before compaction: {before} vs {prod['accepted_and_produced']}")
+    q_before = time_queries(lake)
+
+    comp = compact_lake(lake_dir=lake, state_db_path=os.path.join(lake, "sink_state.duckdb"))
+
+    after = lake_stats(lake)
+    if after["rows"] != before["rows"] or after["unique_row_ids"] != before["unique_row_ids"]:
+        raise RuntimeError(f"Compaction changed the data: before {before}, after {after}")
+    q_after = time_queries(lake)
+
+    return {
+        "rows_produced": prod["accepted_and_produced"],
+        "rows_before": before["rows"],
+        "rows_after": after["rows"],
+        "files_before": before["files"],
+        "files_after": after["files"],
+        "size_before_mb": round(before["bytes"] / 1024 / 1024, 3),
+        "size_after_mb": round(after["bytes"] / 1024 / 1024, 3),
+        "compaction_time_sec": comp["compaction_time_sec"],
+        "query_ms_before": q_before,
+        "query_ms_after": q_after,
     }
 
-    print("\n--- Compaction Benchmark Results ---")
-    print(f"Files: {before_count} -> {after_count} ({summary['size_before_mb']} MB -> {summary['size_after_mb']} MB)")
-    print(f"Total Query Time: {summary['query_results']['total_queries']['before_ms']} ms -> {summary['query_results']['total_queries']['after_ms']} ms ({speedup:.2f}x speedup)")
 
-    out_path = os.path.join(RESULTS_DIR, "compaction_benchmark.json")
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2)
-
-    return summary
+def run_compaction_benchmark(records: int, micro_batch: int, repetitions: int) -> Dict[str, Any]:
+    trials: List[Dict[str, Any]] = []
+    for rep in range(1, repetitions + 1):
+        t = run_compaction_trial(records, micro_batch)
+        print(f"run {rep}: {t['rows_before']:,} rows, {t['files_before']} -> {t['files_after']} files, "
+              f"{t['size_before_mb']} -> {t['size_after_mb']} MB, "
+              f"queries {sum(t['query_ms_before'].values()):.1f} -> {sum(t['query_ms_after'].values()):.1f} ms", flush=True)
+        trials.append(t)
+    med = lambda f: round(statistics.median(f(t) for t in trials), 2)
+    write_result("compaction_benchmark.json", {
+        "parameters": {"records": records, "micro_batch_rows_per_partition": micro_batch,
+                       "repetitions": repetitions, "query_runs_per_timing": 5},
+        "median": {
+            "files_before": med(lambda t: t["files_before"]),
+            "files_after": med(lambda t: t["files_after"]),
+            "query_ms_before": {n: med(lambda t, n=n: t["query_ms_before"][n]) for n, _ in QUERIES},
+            "query_ms_after": {n: med(lambda t, n=n: t["query_ms_after"][n]) for n, _ in QUERIES},
+            "compaction_time_sec": med(lambda t: t["compaction_time_sec"]),
+        },
+        "trials": trials,
+    }, force_local=True)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Compaction benchmark runner.")
-    parser.add_argument("--records", type=int, default=15000, help="Records to produce")
-    parser.add_argument("--micro-batch", type=int, default=50, help="Micro-batch size in rows")
+    parser = argparse.ArgumentParser(description="Compaction benchmark.")
+    parser.add_argument("--records", type=int, default=40000)
+    parser.add_argument("--micro-batch", type=int, default=50)
+    parser.add_argument("--repetitions", type=int, default=3)
     args = parser.parse_args()
-
-    run_compaction_benchmark(records=args.records, micro_batch_size=args.micro_batch)
+    run_compaction_benchmark(args.records, args.micro_batch, args.repetitions)
 
 
 if __name__ == "__main__":

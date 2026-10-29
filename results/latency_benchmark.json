@@ -1,116 +1,281 @@
 {
-  "1000": {
-    "batch_size": 1000,
-    "median_p50_ms": 7141.0,
-    "median_p95_ms": 13314.0,
-    "min_p95_ms": 13161.0,
-    "max_p95_ms": 13449.0,
-    "median_p99_ms": 13481.0,
-    "median_throughput": 3809.1,
-    "runs": [
-      {
-        "batch_size": 1000,
-        "sample_size": 60000,
-        "p50_ms": 7091.0,
-        "p95_ms": 13161.0,
-        "p99_ms": 13338.0,
-        "mean_ms": 7711.13,
-        "throughput_ev_per_sec": 3842.2
-      },
-      {
-        "batch_size": 1000,
-        "sample_size": 60000,
-        "p50_ms": 7329.0,
-        "p95_ms": 13449.0,
-        "p99_ms": 13604.0,
-        "mean_ms": 7926.25,
-        "throughput_ev_per_sec": 3772.3
-      },
-      {
-        "batch_size": 1000,
-        "sample_size": 60000,
-        "p50_ms": 7141.0,
-        "p95_ms": 13314.0,
-        "p99_ms": 13481.0,
-        "mean_ms": 7740.39,
-        "throughput_ev_per_sec": 3809.1
-      }
-    ]
+  "broker": "local-emulator",
+  "generated_at": "2026-10-29T19:41:48+00:00",
+  "environment": {
+    "os": "Linux-6.8.0-138-generic-x86_64-with-glibc2.35",
+    "python": "3.10.12",
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13620H",
+    "cpu_count": 2,
+    "ram_mb": 3915,
+    "disk": "loop1=HDD, sdb=HDD, loop6=HDD, loop4=HDD, loop2=HDD, loop0=HDD, sdc=HDD, loop7=HDD, sda=HDD, loop5=HDD, loop3=HDD",
+    "docker": "not available in this environment",
+    "redpanda": "not run",
+    "libraries": {
+      "duckdb": "1.5.6",
+      "pyarrow": "25.0.1",
+      "confluent-kafka": "2.16.1",
+      "numpy": "2.2.6"
+    }
   },
-  "10000": {
-    "batch_size": 10000,
-    "median_p50_ms": 9522.0,
-    "median_p95_ms": 12641.0,
-    "min_p95_ms": 12404.0,
-    "max_p95_ms": 12949.0,
-    "median_p99_ms": 12911.0,
-    "median_throughput": 4143.4,
-    "runs": [
-      {
-        "batch_size": 10000,
-        "sample_size": 60000,
-        "p50_ms": 9518.5,
-        "p95_ms": 12641.0,
-        "p99_ms": 12911.0,
-        "mean_ms": 9920.11,
-        "throughput_ev_per_sec": 4143.4
-      },
-      {
-        "batch_size": 10000,
-        "sample_size": 60000,
-        "p50_ms": 9583.0,
-        "p95_ms": 12949.0,
-        "p99_ms": 13221.0,
-        "mean_ms": 10080.2,
-        "throughput_ev_per_sec": 4078.8
-      },
-      {
-        "batch_size": 10000,
-        "sample_size": 60000,
-        "p50_ms": 9522.0,
-        "p95_ms": 12404.0,
-        "p99_ms": 12682.0,
-        "mean_ms": 9869.53,
-        "throughput_ev_per_sec": 4215.0
-      }
-    ]
+  "parameters": {
+    "producer_rate_events_per_s": 2000.0,
+    "duration_s": 40.0,
+    "batch_timeout_s": 10.0,
+    "repetitions": 3,
+    "partitions": 6,
+    "batch_size_is_per_partition": true,
+    "spec_batch_sizes": [
+      1000,
+      10000,
+      50000
+    ],
+    "note": "Sizes outside the spec set are extra points to show where the timer takes over."
   },
-  "50000": {
-    "batch_size": 50000,
-    "median_p50_ms": 18508.0,
-    "median_p95_ms": 27289.0,
-    "min_p95_ms": 27275.0,
-    "max_p95_ms": 27304.0,
-    "median_p99_ms": 27694.0,
-    "median_throughput": 4284.6,
-    "runs": [
-      {
-        "batch_size": 50000,
-        "sample_size": 129786,
-        "p50_ms": 18536.0,
-        "p95_ms": 27304.0,
-        "p99_ms": 27709.0,
-        "mean_ms": 19219.6,
-        "throughput_ev_per_sec": 4276.9
-      },
-      {
-        "batch_size": 50000,
-        "sample_size": 130071,
-        "p50_ms": 18508.0,
-        "p95_ms": 27289.0,
-        "p99_ms": 27694.0,
-        "mean_ms": 19156.91,
-        "throughput_ev_per_sec": 4284.6
-      },
-      {
-        "batch_size": 50000,
-        "sample_size": 130463,
-        "p50_ms": 18500.0,
-        "p95_ms": 27275.0,
-        "p99_ms": 27677.0,
-        "mean_ms": 19157.64,
-        "throughput_ev_per_sec": 4300.4
-      }
-    ]
+  "by_batch_size": {
+    "250": {
+      "batch_size": 250,
+      "median_p50_ms": 282.0,
+      "median_p95_ms": 1011.0,
+      "min_p95_ms": 1011.0,
+      "max_p95_ms": 1012.0,
+      "median_p99_ms": 1505.0,
+      "trials": [
+        {
+          "batch_size": 250,
+          "rows_produced": 80000,
+          "rows_in_percentiles": 78000,
+          "p50_ms": 282.0,
+          "p95_ms": 1012.0,
+          "p99_ms": 1505.0,
+          "batches_closed_by_size": 318,
+          "batches_closed_by_timer": 0,
+          "partial_batches_at_end": 6,
+          "max_lag_rows": 0,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 250,
+          "rows_produced": 80000,
+          "rows_in_percentiles": 78000,
+          "p50_ms": 282.0,
+          "p95_ms": 1011.0,
+          "p99_ms": 1502.0,
+          "batches_closed_by_size": 318,
+          "batches_closed_by_timer": 0,
+          "partial_batches_at_end": 6,
+          "max_lag_rows": 0,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 250,
+          "rows_produced": 80000,
+          "rows_in_percentiles": 78000,
+          "p50_ms": 282.0,
+          "p95_ms": 1011.0,
+          "p99_ms": 1507.0,
+          "batches_closed_by_size": 318,
+          "batches_closed_by_timer": 0,
+          "partial_batches_at_end": 6,
+          "max_lag_rows": 0,
+          "sink_drained": true
+        }
+      ]
+    },
+    "1000": {
+      "batch_size": 1000,
+      "median_p50_ms": 1261.0,
+      "median_p95_ms": 3761.0,
+      "min_p95_ms": 3760.0,
+      "max_p95_ms": 3763.0,
+      "median_p99_ms": 5266.0,
+      "trials": [
+        {
+          "batch_size": 1000,
+          "rows_produced": 80000,
+          "rows_in_percentiles": 71000,
+          "p50_ms": 1261.0,
+          "p95_ms": 3761.0,
+          "p99_ms": 5266.0,
+          "batches_closed_by_size": 77,
+          "batches_closed_by_timer": 0,
+          "partial_batches_at_end": 6,
+          "max_lag_rows": 0,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 1000,
+          "rows_produced": 80000,
+          "rows_in_percentiles": 71000,
+          "p50_ms": 1261.0,
+          "p95_ms": 3763.0,
+          "p99_ms": 5267.0,
+          "batches_closed_by_size": 77,
+          "batches_closed_by_timer": 0,
+          "partial_batches_at_end": 6,
+          "max_lag_rows": 0,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 1000,
+          "rows_produced": 80000,
+          "rows_in_percentiles": 71000,
+          "p50_ms": 1261.0,
+          "p95_ms": 3760.0,
+          "p99_ms": 5264.0,
+          "batches_closed_by_size": 77,
+          "batches_closed_by_timer": 0,
+          "partial_batches_at_end": 6,
+          "max_lag_rows": 0,
+          "sink_drained": true
+        }
+      ]
+    },
+    "3000": {
+      "batch_size": 3000,
+      "median_p50_ms": 3516.0,
+      "median_p95_ms": 8569.0,
+      "min_p95_ms": 8557.0,
+      "max_p95_ms": 8576.0,
+      "median_p99_ms": 9759.0,
+      "trials": [
+        {
+          "batch_size": 3000,
+          "rows_produced": 80000,
+          "rows_in_percentiles": 58142,
+          "p50_ms": 3516.0,
+          "p95_ms": 8576.0,
+          "p99_ms": 9763.0,
+          "batches_closed_by_size": 18,
+          "batches_closed_by_timer": 10,
+          "partial_batches_at_end": 5,
+          "max_lag_rows": 0,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 3000,
+          "rows_produced": 80000,
+          "rows_in_percentiles": 58142,
+          "p50_ms": 3510.0,
+          "p95_ms": 8557.0,
+          "p99_ms": 9751.0,
+          "batches_closed_by_size": 18,
+          "batches_closed_by_timer": 10,
+          "partial_batches_at_end": 5,
+          "max_lag_rows": 0,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 3000,
+          "rows_produced": 80000,
+          "rows_in_percentiles": 58142,
+          "p50_ms": 3516.0,
+          "p95_ms": 8569.0,
+          "p99_ms": 9759.0,
+          "batches_closed_by_size": 18,
+          "batches_closed_by_timer": 10,
+          "partial_batches_at_end": 5,
+          "max_lag_rows": 0,
+          "sink_drained": true
+        }
+      ]
+    },
+    "10000": {
+      "batch_size": 10000,
+      "median_p50_ms": 5098.0,
+      "median_p95_ms": 9625.1,
+      "min_p95_ms": 9618.0,
+      "max_p95_ms": 9664.0,
+      "median_p99_ms": 10087.0,
+      "trials": [
+        {
+          "batch_size": 10000,
+          "rows_produced": 80000,
+          "rows_in_percentiles": 60500,
+          "p50_ms": 5088.0,
+          "p95_ms": 9618.0,
+          "p99_ms": 10059.0,
+          "batches_closed_by_size": 0,
+          "batches_closed_by_timer": 24,
+          "partial_batches_at_end": 0,
+          "max_lag_rows": 0,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 10000,
+          "rows_produced": 80000,
+          "rows_in_percentiles": 60500,
+          "p50_ms": 5126.0,
+          "p95_ms": 9664.0,
+          "p99_ms": 10092.0,
+          "batches_closed_by_size": 0,
+          "batches_closed_by_timer": 24,
+          "partial_batches_at_end": 0,
+          "max_lag_rows": 0,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 10000,
+          "rows_produced": 80000,
+          "rows_in_percentiles": 60500,
+          "p50_ms": 5098.0,
+          "p95_ms": 9625.1,
+          "p99_ms": 10087.0,
+          "batches_closed_by_size": 0,
+          "batches_closed_by_timer": 24,
+          "partial_batches_at_end": 0,
+          "max_lag_rows": 0,
+          "sink_drained": true
+        }
+      ]
+    },
+    "50000": {
+      "batch_size": 50000,
+      "median_p50_ms": 5106.0,
+      "median_p95_ms": 9642.0,
+      "min_p95_ms": 9626.0,
+      "max_p95_ms": 9646.0,
+      "median_p99_ms": 10076.0,
+      "trials": [
+        {
+          "batch_size": 50000,
+          "rows_produced": 80000,
+          "rows_in_percentiles": 60500,
+          "p50_ms": 5106.0,
+          "p95_ms": 9642.0,
+          "p99_ms": 10077.0,
+          "batches_closed_by_size": 0,
+          "batches_closed_by_timer": 24,
+          "partial_batches_at_end": 0,
+          "max_lag_rows": 0,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 50000,
+          "rows_produced": 80000,
+          "rows_in_percentiles": 60500,
+          "p50_ms": 5115.0,
+          "p95_ms": 9646.0,
+          "p99_ms": 10076.0,
+          "batches_closed_by_size": 0,
+          "batches_closed_by_timer": 24,
+          "partial_batches_at_end": 0,
+          "max_lag_rows": 0,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 50000,
+          "rows_produced": 80000,
+          "rows_in_percentiles": 60500,
+          "p50_ms": 5097.0,
+          "p95_ms": 9626.0,
+          "p99_ms": 10062.0,
+          "batches_closed_by_size": 0,
+          "batches_closed_by_timer": 24,
+          "partial_batches_at_end": 0,
+          "max_lag_rows": 0,
+          "sink_drained": true
+        }
+      ]
+    }
   }
 }
