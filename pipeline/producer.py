@@ -48,11 +48,12 @@ def run_producer(
     max_records: Optional[int] = None,
     save_stats: Optional[str] = DEFAULT_STATS_PATH,
     force_local: bool = False,
+    require_kafka: bool = False,
 ) -> Dict[str, Any]:
     if not os.path.exists(source_path):
         raise FileNotFoundError(f"Source parquet not found: {source_path}")
 
-    producer = create_producer(bootstrap_servers=bootstrap_servers, force_local=force_local)
+    producer = create_producer(bootstrap_servers=bootstrap_servers, force_local=force_local, require_kafka=require_kafka)
     validator = TripValidator(target_year=2024, target_month=1)
 
     parquet_file = pq.ParquetFile(source_path)
@@ -176,6 +177,7 @@ def main():
     parser.add_argument("--max-records", type=int, default=None, help="Stop after producing N accepted records")
     parser.add_argument("--stats-out", type=str, default=DEFAULT_STATS_PATH, help="Path to save rejection statistics")
     parser.add_argument("--force-local", action="store_true", help="Force local broker emulator")
+    parser.add_argument("--require-kafka", action="store_true", help="Fail instead of falling back to the emulator")
     args = parser.parse_args()
 
     run_producer(
@@ -186,6 +188,7 @@ def main():
         max_records=args.max_records,
         save_stats=args.stats_out,
         force_local=args.force_local,
+        require_kafka=args.require_kafka,
     )
 
 

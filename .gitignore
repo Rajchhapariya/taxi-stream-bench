@@ -19,6 +19,8 @@ broker_*/
 *.duckdb
 *.duckdb.wal
 
+results/_partial_*.json
+
 # OS / IDE
 .DS_Store
 Thumbs.db

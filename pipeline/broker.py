@@ -35,6 +35,39 @@ def is_broker_accessible(host: str = "localhost", port: int = 9092, timeout: flo
         return False
 
 
+class BrokerUnavailableError(RuntimeError):
+    """Raised when a real Kafka-API broker was required but cannot be used."""
+
+
+def _split_host_port(bootstrap_servers: str) -> Tuple[str, int]:
+    first = bootstrap_servers.split(",")[0]
+    host = first.split(":")[0]
+    port = int(first.split(":")[1]) if ":" in first else 9092
+    return host, port
+
+
+def kafka_usable(bootstrap_servers: str) -> bool:
+    """True when confluent-kafka is installed and something is listening on the broker address."""
+    if not CONFLUENT_AVAILABLE:
+        return False
+    host, port = _split_host_port(bootstrap_servers)
+    return is_broker_accessible(host, port)
+
+
+def broker_label(bootstrap_servers: str = "localhost:9092", force_local: bool = False,
+                 require_kafka: bool = False) -> str:
+    """Names the broker a run will really use. Every benchmark result records this string."""
+    if force_local:
+        return "local-emulator"
+    if kafka_usable(bootstrap_servers):
+        return f"kafka-api@{bootstrap_servers}"
+    if require_kafka:
+        raise BrokerUnavailableError(
+            f"No Kafka-API broker reachable at {bootstrap_servers} (or confluent-kafka is missing)."
+        )
+    return "local-emulator (fallback: no broker reachable)"
+
+
 class EmulatedMessage:
     """Matches the confluent_kafka.Message interface."""
 
@@ -124,6 +157,16 @@ class LocalBrokerEngine:
 
         self._next_offsets[key] = next_off
         return next_off
+
+    def peek_end_offset(self, topic: str, partition: int) -> int:
+        """Number of records currently in the partition log, read from disk (never cached).
+
+        Safe to call from a process that is not the writer, which is how lag is measured.
+        """
+        _, idx_file = self._get_paths(topic, partition)
+        if not os.path.exists(idx_file):
+            return 0
+        return os.path.getsize(idx_file) // 16
 
     def write_record(self, topic: str, partition: int, key: bytes, value: bytes) -> int:
         log_path, idx_path = self._get_paths(topic, partition)
@@ -309,6 +352,58 @@ class LocalConsumer:
         self.engine.close()
 
 
+class KafkaConsumerAdapter:
+    """Gives a confluent-kafka Consumer the small interface the sink uses.
+
+    Two things differ from the emulator and are handled here:
+    - seek() is not valid before partitions are assigned. When the sink asks to resume from
+      externally stored offsets (Mode B), the adapter assigns all partitions with those offsets
+      explicitly and does not join the consumer group.
+    - commit() takes offsets as a keyword argument and is made synchronous, so Mode A really does
+      write the file first and finish the commit second.
+    """
+
+    def __init__(self, consumer: Any, num_partitions: int = 6):
+        self._c = consumer
+        self._n = num_partitions
+        self._topics: List[str] = []
+        self._pending: Dict[int, int] = {}
+        self._started = False
+
+    def subscribe(self, topics: List[str]):
+        self._topics = list(topics)
+
+    def seek(self, tp: Any):
+        self._pending[tp.partition] = tp.offset
+
+    def _start(self):
+        if self._started:
+            return
+        self._started = True
+        if self._pending:
+            topic = self._topics[0]
+            self._c.assign([
+                TopicPartition(topic, p, self._pending.get(p, confluent_kafka.OFFSET_BEGINNING))
+                for p in range(self._n)
+            ])
+        else:
+            self._c.subscribe(self._topics)
+
+    def poll(self, timeout: float = 0.05):
+        self._start()
+        return self._c.poll(timeout)
+
+    def commit(self, offsets: Optional[List[Any]] = None):
+        self._start()
+        if offsets is None:
+            self._c.commit(asynchronous=False)
+        else:
+            self._c.commit(offsets=offsets, asynchronous=False)
+
+    def close(self):
+        self._c.close()
+
+
 def get_default_local_state_dir() -> str:
     env_dir = os.environ.get("LOCAL_BROKER_DIR")
     if env_dir:
@@ -319,22 +414,26 @@ def get_default_local_state_dir() -> str:
     )
 
 
-def create_producer(bootstrap_servers: str = "localhost:9092", force_local: bool = False) -> Any:
-    if not force_local and CONFLUENT_AVAILABLE:
-        host = bootstrap_servers.split(":")[0]
-        port = int(bootstrap_servers.split(":")[1]) if ":" in bootstrap_servers else 9092
-        if is_broker_accessible(host, port):
-            conf = {
-                "bootstrap.servers": bootstrap_servers,
-                "client.id": "taxi-stream-producer",
-                "queue.buffering.max.messages": 200000,
-                "queue.buffering.max.kbytes": 262144,
-                "batch.num.messages": 10000,
-                "linger.ms": 5,
-                "compression.type": "snappy",
-                "acks": 1,
-            }
-            return ConfluentProducer(conf)
+def create_producer(bootstrap_servers: str = "localhost:9092", force_local: bool = False,
+                    require_kafka: bool = False) -> Any:
+    """Kafka-API producer when a broker is reachable, otherwise the local emulator.
+
+    With require_kafka=True the emulator is never used: an unreachable broker raises
+    BrokerUnavailableError instead of silently changing what is being measured.
+    """
+    broker_label(bootstrap_servers, force_local, require_kafka)  # raises when required and absent
+    if not force_local and kafka_usable(bootstrap_servers):
+        conf = {
+            "bootstrap.servers": bootstrap_servers,
+            "client.id": "taxi-stream-producer",
+            "queue.buffering.max.messages": 200000,
+            "queue.buffering.max.kbytes": 262144,
+            "batch.num.messages": 10000,
+            "linger.ms": 5,
+            "compression.type": "snappy",
+            "acks": 1,
+        }
+        return ConfluentProducer(conf)
 
     engine = LocalBrokerEngine(state_dir=get_default_local_state_dir())
     return LocalProducer(engine)
@@ -344,20 +443,23 @@ def create_consumer(
     bootstrap_servers: str = "localhost:9092",
     group_id: str = "taxi-sink-group",
     force_local: bool = False,
+    require_kafka: bool = False,
+    num_partitions: int = 6,
 ) -> Any:
-    if not force_local and CONFLUENT_AVAILABLE:
-        host = bootstrap_servers.split(":")[0]
-        port = int(bootstrap_servers.split(":")[1]) if ":" in bootstrap_servers else 9092
-        if is_broker_accessible(host, port):
-            conf = {
-                "bootstrap.servers": bootstrap_servers,
-                "group.id": group_id,
-                "auto.offset.reset": "earliest",
-                "enable.auto.commit": False,
-                "fetch.min.bytes": 1024 * 32,
-                "fetch.wait.max.ms": 100,
-            }
-            return ConfluentConsumer(conf)
+    broker_label(bootstrap_servers, force_local, require_kafka)
+    if not force_local and kafka_usable(bootstrap_servers):
+        conf = {
+            "bootstrap.servers": bootstrap_servers,
+            "group.id": group_id,
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": False,
+            "fetch.min.bytes": 1024 * 32,
+            "fetch.wait.max.ms": 100,
+            # A killed consumer stays a group member until this timeout; keep it short so a
+            # restarted Mode A sink is not blocked for the 45 s default.
+            "session.timeout.ms": 6000,
+        }
+        return KafkaConsumerAdapter(ConfluentConsumer(conf), num_partitions=num_partitions)
 
     engine = LocalBrokerEngine(state_dir=get_default_local_state_dir())
     return LocalConsumer(engine, group_id=group_id)

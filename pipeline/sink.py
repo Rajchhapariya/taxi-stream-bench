@@ -23,7 +23,7 @@ import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from pipeline.broker import TopicPartition, create_consumer
+from pipeline.broker import TopicPartition, broker_label, create_consumer
 
 DEFAULT_LAKE_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -86,6 +86,9 @@ class SinkConsumer:
         num_partitions: int = 6,
         commit_delay: float = 0.02,
         crash_prob: float = 0.0,
+        crash_seed: Optional[int] = None,
+        reconcile_orphans: bool = True,
+        require_kafka: bool = False,
     ):
         if mode not in ("at-least-once", "effectively-once"):
             raise ValueError(f"Invalid mode: {mode}. Must be 'at-least-once' or 'effectively-once'.")
@@ -104,6 +107,11 @@ class SinkConsumer:
         self.crash_before_rename = crash_before_rename
         self.commit_delay = commit_delay
         self.crash_prob = crash_prob
+        self._rng = random.Random(crash_seed)
+        self.reconcile_orphans = reconcile_orphans
+        self.broker = broker_label(bootstrap_servers, force_local, require_kafka)
+        self.reconciled_files = 0
+        self._crashed = False
 
         os.makedirs(self.lake_dir, exist_ok=True)
         self.running = True
@@ -112,11 +120,15 @@ class SinkConsumer:
         if self.mode == "effectively-once":
             clean_orphan_tmp_files(self.lake_dir)
             self._init_duckdb_state()
+            if self.reconcile_orphans:
+                self._reconcile_unmanifested_files()
 
         self.consumer = create_consumer(
             bootstrap_servers=self.bootstrap_servers,
             group_id=self.group_id,
             force_local=self.force_local,
+            require_kafka=require_kafka,
+            num_partitions=self.num_partitions,
         )
         self.consumer.subscribe([self.topic])
 
@@ -131,7 +143,11 @@ class SinkConsumer:
 
         self.total_rows_committed = 0
         self.total_batches_committed = 0
+        self.messages_polled = 0
         self.latencies_ms: List[float] = []
+        # One entry per flushed batch: (partition, reason, per-row latencies in ms).
+        # reason is "size", "timeout" or "final" (end-of-run flush of a partial batch).
+        self.batch_latencies: List[Tuple[int, str, List[float]]] = []
 
     def _init_duckdb_state(self):
         # On Windows, terminating a child process can briefly hold file locks.
@@ -168,6 +184,34 @@ class SinkConsumer:
                 PRIMARY KEY (topic, partition)
             );
         """)
+
+    def _reconcile_unmanifested_files(self):
+        """Removes sink-named Parquet files that the manifest does not list.
+
+        A kill between os.replace and the DuckDB commit leaves a finished file whose offsets
+        are not recorded. The restarted sink re-reads those offsets, and because batch
+        boundaries depend on timing the new file can have a different offset range, so name
+        based idempotence alone would keep both files. Deleting the unrecorded file makes the
+        manifest the single source of truth for what is in the lake.
+        """
+        known = {
+            os.path.normpath(r[0])
+            for r in self.con.execute("SELECT file_path FROM lake_manifest").fetchall()
+        }
+        pattern = os.path.join(self.lake_dir, "**", "trips-p*-o*-o*.parquet")
+        for path in glob.glob(pattern, recursive=True):
+            rel = os.path.normpath(os.path.relpath(path, self.lake_dir))
+            if rel not in known:
+                try:
+                    os.remove(path)
+                    self.reconciled_files += 1
+                except OSError:
+                    pass
+
+    def _crash(self, code: int):
+        """Simulates a process crash: no flush, no consumer close, no DuckDB close."""
+        self._crashed = True
+        raise SystemExit(code)
 
     def _resume_from_duckdb_offsets(self):
         """Resumes consuming from offsets stored in DuckDB rather than Kafka committed offsets."""
@@ -221,7 +265,7 @@ class SinkConsumer:
 
         return pa.Table.from_pydict(columns, schema=PARQUET_SCHEMA)
 
-    def _flush_partition(self, partition: int):
+    def _flush_partition(self, partition: int, reason: str = "size"):
         records = self.buffers[partition]
         if not records:
             return
@@ -238,9 +282,9 @@ class SinkConsumer:
 
         table = self._records_to_arrow_table(records, now_epoch_ms)
 
-        for rec in records:
-            prod_ms = rec.get("produce_epoch_ms", now_epoch_ms)
-            self.latencies_ms.append(max(0.0, now_epoch_ms - prod_ms))
+        batch_lat = [max(0.0, now_epoch_ms - rec.get("produce_epoch_ms", now_epoch_ms)) for rec in records]
+        self.latencies_ms.extend(batch_lat)
+        self.batch_latencies.append((partition, reason, batch_lat))
 
         if self.mode == "at-least-once":
             # Mode A: write file directly, then commit offset to Kafka
@@ -251,8 +295,8 @@ class SinkConsumer:
             pq.write_table(table, final_path, compression="snappy")
 
             # Simulated crash after file write but before offset commit
-            if self.crash_after_rename or (self.crash_prob > 0 and random.random() < self.crash_prob):
-                sys.exit(42)
+            if self.crash_after_rename or (self.crash_prob > 0 and self._rng.random() < self.crash_prob):
+                self._crash(42)
 
             if self.commit_delay > 0:
                 time.sleep(self.commit_delay)
@@ -276,13 +320,13 @@ class SinkConsumer:
             pq.write_table(table, temp_path, compression="snappy")
 
             if self.crash_before_rename:
-                sys.exit(43)
+                self._crash(43)
 
             # Atomic rename from staging to final file
             os.replace(temp_path, final_path)
 
-            if self.crash_after_rename or (self.crash_prob > 0 and random.random() < self.crash_prob):
-                sys.exit(44)
+            if self.crash_after_rename or (self.crash_prob > 0 and self._rng.random() < self.crash_prob):
+                self._crash(44)
 
             # Record offset and manifest in one DuckDB transaction
             rel_file_path = os.path.relpath(final_path, self.lake_dir)
@@ -311,7 +355,12 @@ class SinkConsumer:
         self.end_offsets[partition] = None
         self.last_flush_times[partition] = time.time()
 
-    def run(self, max_messages: Optional[int] = None, max_seconds: Optional[float] = None) -> Dict[str, Any]:
+    def run(
+        self,
+        max_messages: Optional[int] = None,
+        max_seconds: Optional[float] = None,
+        idle_exit_polls: Optional[int] = 20,
+    ) -> Dict[str, Any]:
         start_time = time.time()
         messages_polled = 0
         empty_polls = 0
@@ -332,27 +381,28 @@ class SinkConsumer:
                     self.end_offsets[p] = off
                     self.buffers[p].append(val)
                     messages_polled += 1
+                    self.messages_polled = messages_polled
 
                     if len(self.buffers[p]) >= self.batch_size:
-                        self._flush_partition(p)
+                        self._flush_partition(p, "size")
 
                     if max_messages and messages_polled >= max_messages:
                         for part in range(self.num_partitions):
                             if self.buffers[part]:
-                                self._flush_partition(part)
+                                self._flush_partition(part, "final")
                         break
                 else:
                     empty_polls += 1
-                    if empty_polls >= 20:
+                    if idle_exit_polls is not None and empty_polls >= idle_exit_polls:
                         for part in range(self.num_partitions):
                             if self.buffers[part]:
-                                self._flush_partition(part)
+                                self._flush_partition(part, "final")
                         break
 
                 now = time.time()
                 for p in range(self.num_partitions):
                     if self.buffers[p] and (now - self.last_flush_times[p] >= self.batch_timeout):
-                        self._flush_partition(p)
+                        self._flush_partition(p, "timeout")
 
                 if now - last_log_time >= 5.0:
                     print(f"Sink [{self.mode}]: {self.total_rows_committed:,} rows written ({self.total_batches_committed:,} files)")
@@ -366,16 +416,21 @@ class SinkConsumer:
         except KeyboardInterrupt:
             pass
         finally:
-            for p in range(self.num_partitions):
-                if self.buffers[p]:
-                    self._flush_partition(p)
-            self.consumer.close()
-            if self.con:
-                self.con.close()
+            # After a simulated crash nothing is flushed or closed, as with a killed process.
+            if not self._crashed:
+                for p in range(self.num_partitions):
+                    if self.buffers[p]:
+                        self._flush_partition(p, "final")
+                self.consumer.close()
+                if self.con:
+                    self.con.close()
 
         elapsed = max(0.001, time.time() - start_time)
         return {
             "mode": self.mode,
+            "broker": self.broker,
+            "reconciled_files": self.reconciled_files,
+            "messages_polled": self.messages_polled,
             "total_rows_committed": self.total_rows_committed,
             "total_batches_committed": self.total_batches_committed,
             "elapsed_seconds": round(elapsed, 3),
@@ -401,6 +456,11 @@ def main():
     parser.add_argument("--crash-prob", type=float, default=0.0, help="Simulated crash probability at commit boundary")
     parser.add_argument("--crash-after-rename", action="store_true", help="Crash injection hook")
     parser.add_argument("--crash-before-rename", action="store_true", help="Crash injection hook")
+    parser.add_argument("--crash-seed", type=int, default=None, help="Seed for the crash-probability generator")
+    parser.add_argument("--no-reconcile", action="store_true",
+                        help="Mode B only: skip deleting Parquet files the manifest does not list")
+    parser.add_argument("--require-kafka", action="store_true",
+                        help="Fail instead of falling back to the local emulator")
     args = parser.parse_args()
 
     sink = SinkConsumer(
@@ -417,6 +477,9 @@ def main():
         crash_before_rename=args.crash_before_rename,
         commit_delay=args.commit_delay,
         crash_prob=args.crash_prob,
+        crash_seed=args.crash_seed,
+        reconcile_orphans=not args.no_reconcile,
+        require_kafka=args.require_kafka,
     )
     sink.run(max_messages=args.max_messages, max_seconds=args.max_seconds)
 
