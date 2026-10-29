@@ -1,0 +1,12 @@
+{
+  "total_processed": 2964624,
+  "total_accepted": 2869979,
+  "total_rejected": 94645,
+  "reject_counts": {
+    "negative_fare": 37568,
+    "zero_distance": 60371,
+    "outside_month": 18,
+    "dropoff_before_pickup": 870
+  },
+  "elapsed_seconds": 8.86
+}

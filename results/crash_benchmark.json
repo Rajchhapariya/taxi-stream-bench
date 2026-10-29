@@ -1,0 +1,147 @@
+{
+  "summary": {
+    "at-least-once": {
+      "mean_duplicate_rows": 0.0,
+      "mean_missing_rows": 0.0,
+      "mean_file_count": 81.0,
+      "runs": [
+        {
+          "mode": "at-least-once",
+          "seed": 42,
+          "total_produced": 30000,
+          "total_in_lake": 30000,
+          "unique_rows": 30000,
+          "duplicate_rows": 0,
+          "missing_rows": 0,
+          "file_count": 86
+        },
+        {
+          "mode": "at-least-once",
+          "seed": 100,
+          "total_produced": 30000,
+          "total_in_lake": 30000,
+          "unique_rows": 30000,
+          "duplicate_rows": 0,
+          "missing_rows": 0,
+          "file_count": 79
+        },
+        {
+          "mode": "at-least-once",
+          "seed": 2024,
+          "total_produced": 30000,
+          "total_in_lake": 30000,
+          "unique_rows": 30000,
+          "duplicate_rows": 0,
+          "missing_rows": 0,
+          "file_count": 78
+        }
+      ]
+    },
+    "effectively-once": {
+      "mean_duplicate_rows": 0.0,
+      "mean_missing_rows": 0.0,
+      "mean_file_count": 70.3,
+      "runs": [
+        {
+          "mode": "effectively-once",
+          "seed": 42,
+          "total_produced": 30000,
+          "total_in_lake": 30000,
+          "unique_rows": 30000,
+          "duplicate_rows": 0,
+          "missing_rows": 0,
+          "file_count": 69
+        },
+        {
+          "mode": "effectively-once",
+          "seed": 100,
+          "total_produced": 30000,
+          "total_in_lake": 30000,
+          "unique_rows": 30000,
+          "duplicate_rows": 0,
+          "missing_rows": 0,
+          "file_count": 72
+        },
+        {
+          "mode": "effectively-once",
+          "seed": 2024,
+          "total_produced": 30000,
+          "total_in_lake": 30000,
+          "unique_rows": 30000,
+          "duplicate_rows": 0,
+          "missing_rows": 0,
+          "file_count": 70
+        }
+      ]
+    }
+  },
+  "all_runs": [
+    {
+      "mode": "at-least-once",
+      "seed": 42,
+      "total_produced": 30000,
+      "total_in_lake": 30000,
+      "unique_rows": 30000,
+      "duplicate_rows": 0,
+      "missing_rows": 0,
+      "file_count": 86
+    },
+    {
+      "mode": "at-least-once",
+      "seed": 100,
+      "total_produced": 30000,
+      "total_in_lake": 30000,
+      "unique_rows": 30000,
+      "duplicate_rows": 0,
+      "missing_rows": 0,
+      "file_count": 79
+    },
+    {
+      "mode": "at-least-once",
+      "seed": 2024,
+      "total_produced": 30000,
+      "total_in_lake": 30000,
+      "unique_rows": 30000,
+      "duplicate_rows": 0,
+      "missing_rows": 0,
+      "file_count": 78
+    },
+    {
+      "mode": "effectively-once",
+      "seed": 42,
+      "total_produced": 30000,
+      "total_in_lake": 30000,
+      "unique_rows": 30000,
+      "duplicate_rows": 0,
+      "missing_rows": 0,
+      "file_count": 69
+    },
+    {
+      "mode": "effectively-once",
+      "seed": 100,
+      "total_produced": 30000,
+      "total_in_lake": 30000,
+      "unique_rows": 30000,
+      "duplicate_rows": 0,
+      "missing_rows": 0,
+      "file_count": 72
+    },
+    {
+      "mode": "effectively-once",
+      "seed": 2024,
+      "total_produced": 30000,
+      "total_in_lake": 30000,
+      "unique_rows": 30000,
+      "duplicate_rows": 0,
+      "missing_rows": 0,
+      "file_count": 70
+    }
+  ],
+  "seeds": [
+    42,
+    100,
+    2024
+  ],
+  "kills_per_run": 10,
+  "records_per_run": 30000
+}

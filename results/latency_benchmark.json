@@ -1,0 +1,116 @@
+{
+  "1000": {
+    "batch_size": 1000,
+    "median_p50_ms": 7141.0,
+    "median_p95_ms": 13314.0,
+    "min_p95_ms": 13161.0,
+    "max_p95_ms": 13449.0,
+    "median_p99_ms": 13481.0,
+    "median_throughput": 3809.1,
+    "runs": [
+      {
+        "batch_size": 1000,
+        "sample_size": 60000,
+        "p50_ms": 7091.0,
+        "p95_ms": 13161.0,
+        "p99_ms": 13338.0,
+        "mean_ms": 7711.13,
+        "throughput_ev_per_sec": 3842.2
+      },
+      {
+        "batch_size": 1000,
+        "sample_size": 60000,
+        "p50_ms": 7329.0,
+        "p95_ms": 13449.0,
+        "p99_ms": 13604.0,
+        "mean_ms": 7926.25,
+        "throughput_ev_per_sec": 3772.3
+      },
+      {
+        "batch_size": 1000,
+        "sample_size": 60000,
+        "p50_ms": 7141.0,
+        "p95_ms": 13314.0,
+        "p99_ms": 13481.0,
+        "mean_ms": 7740.39,
+        "throughput_ev_per_sec": 3809.1
+      }
+    ]
+  },
+  "10000": {
+    "batch_size": 10000,
+    "median_p50_ms": 9522.0,
+    "median_p95_ms": 12641.0,
+    "min_p95_ms": 12404.0,
+    "max_p95_ms": 12949.0,
+    "median_p99_ms": 12911.0,
+    "median_throughput": 4143.4,
+    "runs": [
+      {
+        "batch_size": 10000,
+        "sample_size": 60000,
+        "p50_ms": 9518.5,
+        "p95_ms": 12641.0,
+        "p99_ms": 12911.0,
+        "mean_ms": 9920.11,
+        "throughput_ev_per_sec": 4143.4
+      },
+      {
+        "batch_size": 10000,
+        "sample_size": 60000,
+        "p50_ms": 9583.0,
+        "p95_ms": 12949.0,
+        "p99_ms": 13221.0,
+        "mean_ms": 10080.2,
+        "throughput_ev_per_sec": 4078.8
+      },
+      {
+        "batch_size": 10000,
+        "sample_size": 60000,
+        "p50_ms": 9522.0,
+        "p95_ms": 12404.0,
+        "p99_ms": 12682.0,
+        "mean_ms": 9869.53,
+        "throughput_ev_per_sec": 4215.0
+      }
+    ]
+  },
+  "50000": {
+    "batch_size": 50000,
+    "median_p50_ms": 18508.0,
+    "median_p95_ms": 27289.0,
+    "min_p95_ms": 27275.0,
+    "max_p95_ms": 27304.0,
+    "median_p99_ms": 27694.0,
+    "median_throughput": 4284.6,
+    "runs": [
+      {
+        "batch_size": 50000,
+        "sample_size": 129786,
+        "p50_ms": 18536.0,
+        "p95_ms": 27304.0,
+        "p99_ms": 27709.0,
+        "mean_ms": 19219.6,
+        "throughput_ev_per_sec": 4276.9
+      },
+      {
+        "batch_size": 50000,
+        "sample_size": 130071,
+        "p50_ms": 18508.0,
+        "p95_ms": 27289.0,
+        "p99_ms": 27694.0,
+        "mean_ms": 19156.91,
+        "throughput_ev_per_sec": 4284.6
+      },
+      {
+        "batch_size": 50000,
+        "sample_size": 130463,
+        "p50_ms": 18500.0,
+        "p95_ms": 27275.0,
+        "p99_ms": 27677.0,
+        "mean_ms": 19157.64,
+        "throughput_ev_per_sec": 4300.4
+      }
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "source_file": "c:\\Users\\Rajch\\Desktop\\Research\\taxi-stream-bench\\data\\yellow_tripdata_2024-01.parquet",
+  "total_source_rows_scanned": 5138,
+  "accepted_and_produced": 5000,
+  "rejected_rows": 138,
+  "reject_counts_by_rule": {
+    "negative_fare": 68,
+    "zero_distance": 67,
+    "outside_month": 9,
+    "dropoff_before_pickup": 1
+  },
+  "elapsed_seconds": 0.113,
+  "avg_events_per_second": 44274.1
+}
