@@ -42,3 +42,8 @@ Hardware and software environment used for the throughput, latency, compaction, 
 - **Data Integrity SHA-256**: `c4d59da7bbc8abaeeeb1727947ee93d9891a71acb42854bd80db1571b2030510`
 - **Streaming Parquet Lake**: `lake/date=YYYY-MM-DD/` partitioned micro-batch files
 - **Metadata & State Store**: `lake/sink_state.duckdb` (Mode B offset manifest and transaction ledger)
+
+## Environment of the recorded benchmark results
+
+The tables in `README.md` and `report/report.pdf` were not produced on the Windows machine described above. They were produced in a Linux virtual machine (Ubuntu, kernel 6.8, 2 logical CPUs, 3,915 MB RAM, Python 3.10.12) running on the same i7-13620H laptop, against the local log emulator in `pipeline/broker.py`. Docker and Redpanda were not available there. The hardware and Redpanda rows above describe the intended Docker Desktop setup, not the measured one. Each results JSON in `results/` records the broker label and the host details of its own run.
+

@@ -54,7 +54,7 @@
       #line(length: 40%, stroke: 0.5pt + rgb("#334155"))
       #v(3pt)
       #text(size: 7.5pt, fill: rgb("#cbd5e1"))[
-        *Author:* #author #h(10pt) | #h(10pt) *Target Stack:* Redpanda, pyarrow, DuckDB #h(10pt) | #h(10pt) *Date:* #date
+        *Author:* #author #h(10pt) | #h(10pt) *Broker used:* #broker-label #h(10pt) | #h(10pt) *Date:* #date
       ]
     ]
   ]
@@ -140,28 +140,30 @@
   doc-id: "BENCH-STRM-2026-03"
 )
 
-== 1. Project Overview & Test Scope
+== 1. Scope and What Was Measured
 
-Kafka and Redpanda provide atomic transactions between internal broker topics, but they cannot coordinate two-phase commits with external filesystems or object storage. When a consumer writes micro-batches to Parquet and crashes before committing its offset, the broker replays the batch upon restart, creating duplicate rows in the data lake.
+Kafka-style brokers cannot coordinate a two-phase commit with a file sink. When a consumer writes a Parquet batch and dies before its offset is recorded, the batch is read again on restart and its rows appear twice in the lake. This project measures that gap on #total-records NYC Yellow Taxi trip records (January 2024) for two sinks: at-least-once (Mode A) and an offset-keyed idempotent sink (Mode B, called effectively-once because Kafka transactions do not cover a file sink).
 
-In this project, I built an end-to-end streaming ingestion pipeline on 2.96M NYC Yellow Taxi records to measure two delivery models under forced hard-kills: standard at-least-once (Mode A) versus an idempotent effectively-once sink (Mode B) backed by atomic file renames and DuckDB manifest checkpoints.
+#callout(
+  "Read this first: which broker produced these numbers",
+  [Every result in this report comes from the *#broker-label*, a disk-backed Kafka-style log in `pipeline/broker.py`, not from Redpanda. Docker was not available where the runs were made, so the Redpanda code path is written but has not been run end to end. Environment: #env-line.],
+  kind: "warning"
+)
 
 #v(0.15cm)
 
 #grid(
   columns: (1fr, 1fr, 1fr, 1fr),
   gutter: 8pt,
-  stat-card("Source Dataset", total-records, "Official NYC TLC Parquet", color: rgb("#0284c7")),
-  stat-card("Accepted Records", accepted-records, "96.81% validation pass rate", color: rgb("#10b981")),
-  stat-card("Crash Invariance", "0 Duplicates", "30 forced kills across 3 seeds", color: rgb("#8b5cf6")),
-  stat-card("Compaction Gain", compaction-speedup, "Query latency speedup", color: rgb("#f59e0b"))
+  stat-card("Source rows", total-records, "NYC TLC, January 2024", color: rgb("#0284c7")),
+  stat-card("Accepted rows", accepted-records, pass-rate + " pass validation", color: rgb("#10b981")),
+  stat-card("Duplicates, Mode A vs B", mode-a-dups + " vs " + mode-b-dups, "mean rows per run, boundary-crash variant", color: rgb("#8b5cf6")),
+  stat-card("Compaction", compaction-speedup, "faster for the three queries", color: rgb("#f59e0b"))
 )
 
 #v(0.15cm)
 
-== 2. Pipeline Architecture & Delivery Semantics
-
-The system separates ingestion, validation, persistence, and querying into four distinct stages:
+== 2. Pipeline and Delivery Modes
 
 #table(
   columns: (1.1fr, 1.3fr, 2.6fr),
@@ -169,132 +171,104 @@ The system separates ingestion, validation, persistence, and querying into four 
   stroke: 0.5pt + rgb("#cbd5e1"),
   inset: 5pt,
   [*Stage*], [*Implementation*], [*Responsibility*],
-  [Producer], [`pipeline/producer.py`], [Streams records at target rates (5k to 50k ev/s), checks data hygiene rules, adds `row_id` and UTC `produce_ts`, and partitions by `PULocationID` across 6 channels.],
-  [Delivery Mode A], [At-Least-Once], [Writes micro-batch directly to `trips-p{P}-{uuid}.parquet`, then issues Kafka offset commit. If killed in between, replayed records produce duplicate files.],
-  [Delivery Mode B], [Effectively-Once], [Names files by offset range (`trips-p{P}-o{start}-o{end}.parquet`), stages in `.tmp`, executes atomic `os.replace`, and records offsets in DuckDB in one transaction.],
-  [Query Layer], [`pipeline/queries.py`], [Runs vectorized SQL aggregations directly on the date-partitioned Parquet files using embedded DuckDB.]
+  [Producer], [`pipeline/producer.py`], [Replays records at a target rate, validates each row, adds `row_id` and `produce_ts`, keys by `PULocationID` across 6 partitions.],
+  [Mode A], [At-least-once], [Writes the batch to `trips-p{P}-{uuid}.parquet`, then commits the offset to the broker. A kill in between replays the batch under a new name.],
+  [Mode B], [Effectively-once], [Names the file by offset range, writes to a temp file, renames it with `os.replace`, then records the range and the new offset in DuckDB in one transaction. On restart it resumes from the DuckDB offsets, deletes temp files and deletes finished files the manifest does not list.],
+  [Query layer], [`pipeline/queries.py`], [Three DuckDB aggregations over the date-partitioned Parquet files.]
 )
 
 #v(0.15cm)
 
-#callout(
-  "Delivery Guarantee Note: Effectively-Once vs Exactly-Once",
-  "Mode B is designated as effectively-once, not exactly-once. Because Kafka transactions cannot coordinate two-phase commits with external filesystems or S3 buckets, idempotence must be enforced by the sink itself through deterministic file naming and atomic renames.",
-  kind: "important"
-)
+== 3. Correctness Under Forced Crashes
 
-== 3. Correctness Under Forced Crash Injection
-
-I tested crash resilience by hard-killing the sink process (`SIGKILL` / `TerminateProcess`) 10 times per run across 3 seeds (42, 100, 2024), totaling 30 forced kills per delivery mode. The kills fired at randomized intervals while micro-batches were being written to disk.
+Each run stages 30,000 accepted rows (8,000 in the timer variant), then hard-kills the sink with SIGKILL 10 times at random moments, restarting it after every kill, and ends with an uninjected sink that drains the topic. Three seeds per row of the table. A _boundary crash_ is the process dying between the file write and the offset record, with no cleanup; the plain kills land in that window only occasionally, so the injected variants make the window easier to hit.
 
 #table(
-  columns: (1.5fr, 1.1fr, 1.1fr, 1.1fr, 1.2fr),
+  columns: (1.5fr, 1.7fr, 0.5fr, 0.9fr, 0.9fr, 0.9fr, 0.9fr, 0.9fr),
   fill: (col, row) => if row == 0 { rgb("#f1f5f9") } else { none },
   stroke: 0.5pt + rgb("#cbd5e1"),
-  inset: 5pt,
-  [*Delivery Mode*], [*Kills Per Run*], [*Mean Duplicates*], [*Mean Missing*], [*Offset Storage*],
-  [Mode A: At-Least-Once], [10 Kills / 3 Seeds], [#mode-a-dups], [0.0], [Kafka Consumer Commit],
-  [Mode B: Effectively-Once], [10 Kills / 3 Seeds], [0.0], [0.0], [Atomic Rename + DuckDB]
+  inset: 4pt,
+  ..crash-cells
 )
 
-In Mode A, duplicate rows arise from the non-atomic gap between disk persistence and the broker's offset acknowledgment. When a batch is written to disk and the process dies before the commit RPC completes, Kafka replays that batch upon restart. Mode A writes it to a new random UUID filename, duplicating rows. Mode B prevents this because replayed batches map to the identical offset-keyed filename and overwrite it atomically, while the sink checks DuckDB's manifest on restart to skip already-persisted ranges.
+#v(0.15cm)
+
+Mode A duplicates rows in every injected variant and in some plain-kill runs, and never loses rows. Mode B produced no duplicates and no missing rows in any run. The row `effectively-once-no-reconcile` is Mode B built exactly as the build specification words it, which deletes temp files on restart but keeps a renamed file that the manifest does not list. With size-closed batches a replay reproduces the same file name and nothing is duplicated. With timer-closed batches the replay can cut a different offset range and both files stay: that variant leaked a mean of #noreconcile-dups duplicate rows per run, against #reconcile-dups once unlisted files are deleted on restart.
 
 #pagebreak()
 
-== 4. Batch Size Trade-off: Latency vs. Throughput
+== 4. Latency Versus Batch Size
 
-Micro-batch size governs the trade-off between write latency and throughput. Small batches keep buffering delay low at the cost of frequent file system operations, while large batches amortize Parquet footer serialization and dictionary encoding overhead across bigger columnar vectors.
+The producer runs in a separate process at a fixed rate that the sink absorbs with near-zero lag, so queueing backlog is not part of the latency. A partition flushes after B rows or after the batch timer T, whichever comes first. The first batch per partition and the partial batches at the end of a run are excluded. Sizes marked extra are not in the build specification; they show where the timer takes over.
 
 #diagram-frame(
   "latency_vs_batch_tradeoff.png",
-  "Figure 1: Trade-off curve showing p50, p95, and p99 latency (ms) and sustained throughput (events/s) across batch sizes B = 1k, 10k, and 50k."
+  "Figure 1: Left, p50, p95 and p99 end-to-end latency against batch size, with the batch timer drawn as a horizontal line. Right, producer and sink rates with peak lag for each target rate."
 )
 
 #v(0.15cm)
 
 #table(
-  columns: (1.1fr, 1.1fr, 1.1fr, 1.1fr, 1.1fr, 1.5fr),
+  columns: (1.4fr, 0.9fr, 0.9fr, 1.3fr, 0.9fr, 1.6fr),
   fill: (col, row) => if row == 0 { rgb("#f1f5f9") } else { none },
   stroke: 0.5pt + rgb("#cbd5e1"),
-  inset: 5pt,
-  [*Batch Size (B)*], [*Median p50*], [*Median p95*], [*Min p95*], [*Max p95*], [*Sustained Throughput*],
-  [1,000 rows], [7,141.0 ms], [#p95-b1k], [13,161.0 ms], [13,449.0 ms], [3,809.1 events/s],
-  [10,000 rows], [9,522.0 ms], [#p95-b10k], [12,404.0 ms], [12,949.0 ms], [4,143.4 events/s],
-  [50,000 rows], [18,508.0 ms], [#p95-b50k], [27,275.0 ms], [27,304.0 ms], [#tp-b50k]
+  inset: 4.5pt,
+  ..latency-cells
 )
 
 #v(0.15cm)
 
-== 5. Throughput & Consumer Lag Under Varied Workload Rates
+Once B is large enough that a partition cannot fill before the timer fires, every batch is closed by the timer and latency stops depending on B. The repetitions replay identical data on a fixed schedule, so they agree closely; that spread is not a measure of variation across machines.
 
-Pipeline ingestion was benchmarked across target production rates (5k, 20k, 50k events/s, and unthrottled maximum) over 3 runs per tier to evaluate consumer lag and queue depth under backpressure.
+== 5. Throughput and Consumer Lag
+
+Producer and sink run in separate processes. Lag is rows on the topic minus rows the sink has read, sampled every 0.5 s; the first 20 percent of each run is excluded. The read path is the emulator's per-message index lookup, so these rates describe the emulator-backed sink and not Redpanda.
 
 #table(
-  columns: (1.3fr, 1.4fr, 1.3fr, 1.3fr, 1.2fr),
+  columns: (1fr, 1.1fr, 1.3fr, 1.5fr, 1fr, 1.3fr),
   fill: (col, row) => if row == 0 { rgb("#f1f5f9") } else { none },
   stroke: 0.5pt + rgb("#cbd5e1"),
-  inset: 5pt,
-  [*Target Rate*], [*Median Sustained*], [*Min Rate*], [*Max Rate*], [*Peak Lag*],
-  [5,000 ev/s], [1,822.8 ev/s], [1,744.3 ev/s], [1,861.0 ev/s], [0 records],
-  [20,000 ev/s], [2,276.8 ev/s], [2,248.5 ev/s], [2,321.1 ev/s], [0 records],
-  [50,000 ev/s], [2,426.9 ev/s], [2,425.8 ev/s], [2,472.5 ev/s], [0 records],
-  [MAX (Unthrottled)], [2,373.0 ev/s], [2,359.4 ev/s], [2,555.3 ev/s], [0 records]
-)
-
-#v(0.15cm)
-
-#callout(
-  "Practical Operating Recommendation",
-  "Batch size B = 10,000 rows captures 96.7% of peak streaming throughput while reducing p95 latency by 53.6% compared to B = 50,000. It offers the best operating point for near-real-time analytical lakes on local SSD storage.",
-  kind: "tip"
+  inset: 4.5pt,
+  ..throughput-cells
 )
 
 #pagebreak()
 
-== 6. The Small-Files Problem & Parquet Compaction
+== 6. The Small-Files Problem and Compaction
 
-Frequent micro-batch flushes create thousands of small Parquet files in the lake folder. When DuckDB scans them, opening file descriptors and parsing Parquet metadata footers dominates execution time. An offline compaction job merges these micro-batches into consolidated Parquet files with 100,000-row row groups.
-
-#table(
-  columns: (1.8fr, 1.4fr, 1.4fr, 1.4fr),
-  fill: (col, row) => if row == 0 { rgb("#f1f5f9") } else { none },
-  stroke: 0.5pt + rgb("#cbd5e1"),
-  inset: 5.5pt,
-  [*Query / Metric*], [*Before Compaction*], [*After Compaction*], [*Speedup*],
-  [Parquet Lake File Count], [#compaction-files-before files], [#compaction-files-after file], [*99.9% reduction*],
-  [Parquet Storage Footprint], [7.27 MB], [0.04 MB], [Snappy Columnar Encodings],
-  [Q1: Hourly Trips per Pickup Zone], [75.81 ms], [3.50 ms], [*21.66x speedup*],
-  [Q2: Avg Fare per Distance Bucket], [75.54 ms], [3.14 ms], [*24.06x speedup*],
-  [Q3: Top 10 Pickup-to-Dropoff Pairs], [81.21 ms], [3.90 ms], [*20.82x speedup*],
-  [Total Analytical Query Latency], [#compaction-latency-before], [#compaction-latency-after], [*#compaction-speedup overall*],
-  [Compaction Run Time], [N/A], [#compaction-overhead], [Offline Background Job]
-)
-
-#v(0.15cm)
-
-== 7. Input Validation & Dirty Row Rejections
-
-The producer checks each record against four explicit sanity checks before publishing to the broker. Across the full January 2024 NYC TLC dataset (2,964,624 raw records), 94,645 rows failed validation and were logged.
+The sink writes one file per micro-batch per partition, so the lake fills with small files. An offline job merges them. Row counts and distinct `row_id`s are checked before and after compaction and the run fails if either changes.
 
 #table(
-  columns: (1.3fr, 1.8fr, 1.2fr, 1.2fr),
+  columns: (2.2fr, 1.2fr, 1.2fr, 1.3fr),
   fill: (col, row) => if row == 0 { rgb("#f1f5f9") } else { none },
   stroke: 0.5pt + rgb("#cbd5e1"),
   inset: 5pt,
-  [*Rule Name*], [*Condition Enforced*], [*Rejections*], [*Share of Dataset*],
-  [`zero_distance`], [`trip_distance <= 0.0`], [60,371], [2.04%],
-  [`negative_fare`], [`fare_amount < 0.0 OR total_amount < 0.0`], [37,568], [1.27%],
-  [`dropoff_before_pickup`], [`tpep_dropoff_datetime <= tpep_pickup_datetime`], [870], [0.0293%],
-  [`outside_month`], [`pickup < 2024-01-01 OR pickup >= 2024-02-01`], [18], [0.0006%],
-  [*Total Rejections*], [*Combined Filter*], [*#rejected-records*], [*3.19%*]
+  ..compaction-cells
 )
 
 #v(0.15cm)
 
-== 8. Skew Considerations & Production Recommendations
+== 7. Input Validation
 
-1. *Partition Skew from PULocationID*: Keying messages by `PULocationID` causes partition skew because taxi rides concentrate heavily around airport hubs (JFK, LaGuardia) and Midtown Manhattan. In production, this can be addressed by salting keys: `hash(str(PULocationID) + "_" + str(row_id % 4))`.
-2. *Decoupled Manifest Storage*: Storing the sink manifest and offsets in DuckDB provides local transactional isolation, ensuring recovery remains independent of Kafka consumer group state.
+The producer checks each row against four rules before publishing. Of #total-records source rows, #rejected-records were rejected.
+
+#table(
+  columns: (1.6fr, 1fr, 1fr),
+  fill: (col, row) => if row == 0 { rgb("#f1f5f9") } else { none },
+  stroke: 0.5pt + rgb("#cbd5e1"),
+  inset: 5pt,
+  ..reject-cells
+)
+
+#v(0.15cm)
+
+== 8. Limitations
+
+1. *No Redpanda run.* All numbers come from the local emulator. The Kafka-API path uses `assign` with stored offsets for Mode B and synchronous keyword commits for Mode A, and is covered only by tests against a stand-in consumer.
+2. *Durability is not modelled.* A killed process does not lose the operating system page cache, so the crash tests exercise ordering, not fsync behaviour.
+3. *The commit window is modelled.* Mode A waits 20 ms before the offset commit to stand in for the broker round trip. Plain-kill duplicate counts depend on that window.
+4. *Partition skew.* Keying by `PULocationID` concentrates traffic on airport and Midtown zones. Salting the key, for example with `row_id mod 4`, spreads it at the cost of per-key ordering.
+5. *Compaction is offline.* It is not safe against a concurrent sink, and a crash between writing the merged file and deleting its inputs leaves duplicate rows visible until it is rerun.
 
 #v(0.15cm)
 
@@ -306,6 +280,6 @@ The producer checks each record against four explicit sanity checks before publi
   width: 100%
 )[
   #set text(size: 8pt, fill: rgb("#1e293b"))
-  *Resume / CV Summary:*
-  "Built a Redpanda-to-Parquet streaming pipeline on #total-records NYC taxi trips with an offset-keyed idempotent sink: across 30 forced crashes it produced 0 duplicate rows versus at-least-once delivery, achieving #tp-b50k sustained throughput and #p95-b10k p95 end-to-end latency."
+  *Resume line (numbers from the tables above):*
+  "Built an offset-keyed idempotent Parquet sink for a Kafka-style stream of #total-records NYC taxi trips and tested it against a disk-backed broker emulator with hard kills and injected crashes: it produced #mode-b-dups duplicate rows against a mean of #mode-a-dups under at-least-once delivery, and a short-timer variant showed that a sink without orphan-file cleanup leaks #noreconcile-dups rows per run. Redpanda path implemented, not yet run."
 ]
