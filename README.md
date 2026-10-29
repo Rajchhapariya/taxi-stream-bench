@@ -149,28 +149,28 @@ Variants: `sigkill-only` = boundary-crash probability 0.0, batch timer 0.5 s, 30
 
 ### Latency versus batch size
 
-The producer runs in its own process at a fixed 2,000 events/s for 40 s, below what the sink absorbs (lag stays near zero), so queueing backlog is not part of the numbers. A partition flushes at B rows or after T = 10 s, whichever comes first. B counts rows per partition (6 partitions). The first batch of each partition and the partial batches at the end are excluded. Sizes marked extra are not in the build spec; they show where the timer takes over. Repetitions: 3. The runs replay identical data on a fixed schedule, so the spread between repetitions is small and does not capture variation between machines or workloads.
+The producer runs in its own process at a fixed 2,000 events/s for 70 s (30 s warm-up, then 40 s measured), below what the sink absorbs (lag stays near zero), so queueing backlog is not part of the numbers. A partition flushes at B rows or after T = 10 s, whichever comes first. B counts rows per partition (6 partitions). Batches committed during the first 30 s of production and the partial batches at the end are excluded. Sizes marked extra are not in the build spec; they show where the timer takes over. Repetitions: 3. The runs replay identical data on a fixed schedule, so the spread between repetitions is small and does not capture variation between machines or workloads.
 
 | B (rows per partition) | p50 ms | p95 ms | p95 min to max | p99 ms | Batches closed by size / timer |
 |---|---|---|---|---|---|
-| 250 (extra) | 282 | 1,011 | 1,011 to 1,012 | 1,505 | 318 / 0 |
-| 1,000 | 1,261 | 3,761 | 3,760 to 3,763 | 5,266 | 77 / 0 |
-| 3,000 (extra) | 3,516 | 8,569 | 8,557 to 8,576 | 9,759 | 18 / 10 |
-| 10,000 | 5,098 | 9,625 | 9,618 to 9,664 | 10,087 | 0 / 24 |
-| 50,000 | 5,106 | 9,642 | 9,626 to 9,646 | 10,076 | 0 / 24 |
+| 250 (extra) | 277 | 1,014 | 1,013 to 1,014 | 1,519 | 556 / 0 |
+| 1,000 | 1,260 | 4,007 | 4,003 to 4,010 | 6,006 | 137 / 0 |
+| 3,000 (extra) | 3,510 | 8,499 | 8,497 to 8,503 | 9,660 | 33 / 19 |
+| 10,000 | 5,045 | 9,591 | 9,563 to 9,601 | 9,999 | 0 / 40 |
+| 50,000 | 5,025 | 9,581 | 9,579 to 9,593 | 9,987 | 0 / 40 |
 
 ![Latency, throughput and lag](results/figures/latency_vs_batch_tradeoff.png)
 
 ### Throughput and consumer lag
 
-Producer and sink run in separate processes. Lag is sampled every 0.5 s as rows on the topic minus rows the sink has read; the first 20 percent of each run is excluded. Reading uses the emulator's per-message index lookup, so these rates describe the emulator-backed sink and say nothing about Redpanda throughput.
+Producer and sink run in separate processes. Lag is sampled every 0.5 s as rows on the topic minus rows the sink has read; the first 30 s of each run are excluded. Reading uses the emulator's per-message index lookup, so these rates describe the emulator-backed sink and say nothing about Redpanda throughput.
 
 | Target ev/s | Produced ev/s | Sink read ev/s (median) | Sink min to max | Peak lag (rows) | Lag when producer stopped |
 |---|---|---|---|---|---|
-| 5,000 | 4,830 | 4,835 | 4,830 to 4,853 | 456 | 0 |
-| 20,000 | 19,214 | 19,278 | 19,259 to 19,297 | 887 | 0 |
-| 50,000 | 39,963 | 24,872 | 24,454 to 24,962 | 121,868 | 113,877 |
-| unthrottled | 39,727 | 24,572 | 24,005 to 25,067 | 119,474 | 111,938 |
+| 5,000 | 4,908 | 4,908 | 4,907 to 4,992 | 500 | 0 |
+| 20,000 | 19,961 | 19,973 | 19,961 to 19,981 | 1,451 | 0 |
+| 50,000 | 43,114 | 24,519 | 24,249 to 24,603 | 1,020,715 | 1,020,713 |
+| unthrottled | 42,922 | 24,654 | 24,238 to 25,093 | 1,007,711 | 1,005,212 |
 
 ### Small files and compaction
 

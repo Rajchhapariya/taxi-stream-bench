@@ -195,11 +195,9 @@ Each run stages 30,000 accepted rows (8,000 in the timer variant), then hard-kil
 
 Mode A duplicates rows in every injected variant and in some plain-kill runs, and never loses rows. Mode B produced no duplicates and no missing rows in any run. The row `effectively-once-no-reconcile` is Mode B built exactly as the build specification words it, which deletes temp files on restart but keeps a renamed file that the manifest does not list. With size-closed batches a replay reproduces the same file name and nothing is duplicated. With timer-closed batches the replay can cut a different offset range and both files stay: that variant leaked a mean of #noreconcile-dups duplicate rows per run, against #reconcile-dups once unlisted files are deleted on restart.
 
-#pagebreak()
-
 == 4. Latency Versus Batch Size
 
-The producer runs in a separate process at a fixed rate that the sink absorbs with near-zero lag, so queueing backlog is not part of the latency. A partition flushes after B rows or after the batch timer T, whichever comes first. The first batch per partition and the partial batches at the end of a run are excluded. Sizes marked extra are not in the build specification; they show where the timer takes over.
+The producer runs in a separate process at a fixed rate that the sink absorbs with near-zero lag, so queueing backlog is not part of the latency. A partition flushes after B rows or after the batch timer T, whichever comes first. Batches committed in the first #warmup-s s of production and the partial batches at the end of a run are excluded. Sizes marked extra are not in the build specification; they show where the timer takes over.
 
 #diagram-frame(
   "latency_vs_batch_tradeoff.png",
@@ -222,7 +220,7 @@ Once B is large enough that a partition cannot fill before the timer fires, ever
 
 == 5. Throughput and Consumer Lag
 
-Producer and sink run in separate processes. Lag is rows on the topic minus rows the sink has read, sampled every 0.5 s; the first 20 percent of each run is excluded. The read path is the emulator's per-message index lookup, so these rates describe the emulator-backed sink and not Redpanda.
+Producer and sink run in separate processes. Lag is rows on the topic minus rows the sink has read, sampled every 0.5 s; the first #warmup-s s of each run are excluded. The read path is the emulator's per-message index lookup, so these rates describe the emulator-backed sink and not Redpanda.
 
 #table(
   columns: (1fr, 1.1fr, 1.3fr, 1.5fr, 1fr, 1.3fr),
@@ -231,8 +229,6 @@ Producer and sink run in separate processes. Lag is rows on the topic minus rows
   inset: 4.5pt,
   ..throughput-cells
 )
-
-#pagebreak()
 
 == 6. The Small-Files Problem and Compaction
 

@@ -1,6 +1,6 @@
 {
   "broker": "local-emulator",
-  "generated_at": "2026-10-29T19:48:45+00:00",
+  "generated_at": "2026-10-29T20:45:08+00:00",
   "environment": {
     "os": "Linux-6.8.0-138-generic-x86_64-with-glibc2.35",
     "python": "3.10.12",
@@ -21,173 +21,173 @@
     "batch_size": 1000,
     "batch_timeout_s": 1.0,
     "sample_interval_s": 0.5,
-    "warmup_fraction": 0.2,
+    "warmup_s": 30.0,
     "repetitions": 3,
     "records_per_target": {
-      "5000": 100000,
-      "20000": 300000,
-      "50000": 300000,
-      "MAX": 300000
+      "5000": 300000,
+      "20000": 1200000,
+      "50000": 2400000,
+      "MAX": 2400000
     }
   },
   "by_target_rate": {
     "5000": {
       "target_rate": 5000.0,
-      "median_sustained_sink_rate": 4835.2,
-      "min_sustained_sink_rate": 4829.7,
-      "max_sustained_sink_rate": 4852.9,
-      "median_achieved_produce_rate": 4829.6,
-      "median_peak_lag_rows": 456,
+      "median_sustained_sink_rate": 4908.1,
+      "min_sustained_sink_rate": 4907.4,
+      "max_sustained_sink_rate": 4991.6,
+      "median_achieved_produce_rate": 4908.1,
+      "median_peak_lag_rows": 500,
       "trials": [
         {
           "target_rate": 5000.0,
-          "rows_produced": 100000,
-          "achieved_produce_rate": 4829.3,
-          "sustained_sink_rate": 4835.2,
-          "rows_committed_at_producer_end": 100000,
+          "rows_produced": 300000,
+          "achieved_produce_rate": 4907.4,
+          "sustained_sink_rate": 4907.4,
+          "rows_committed_at_producer_end": 299154,
           "peak_lag_rows": 500,
           "lag_at_producer_end_rows": 0,
-          "production_seconds": 20.0
+          "production_seconds": 60.1
         },
         {
           "target_rate": 5000.0,
-          "rows_produced": 100000,
-          "achieved_produce_rate": 4830.5,
-          "sustained_sink_rate": 4852.9,
-          "rows_committed_at_producer_end": 100000,
-          "peak_lag_rows": 432,
+          "rows_produced": 300000,
+          "achieved_produce_rate": 4908.1,
+          "sustained_sink_rate": 4908.1,
+          "rows_committed_at_producer_end": 299270,
+          "peak_lag_rows": 500,
           "lag_at_producer_end_rows": 0,
-          "production_seconds": 20.0
+          "production_seconds": 60.1
         },
         {
           "target_rate": 5000.0,
-          "rows_produced": 100000,
-          "achieved_produce_rate": 4829.6,
-          "sustained_sink_rate": 4829.7,
-          "rows_committed_at_producer_end": 100000,
-          "peak_lag_rows": 456,
+          "rows_produced": 300000,
+          "achieved_produce_rate": 4991.6,
+          "sustained_sink_rate": 4991.6,
+          "rows_committed_at_producer_end": 297547,
+          "peak_lag_rows": 500,
           "lag_at_producer_end_rows": 0,
-          "production_seconds": 20.0
+          "production_seconds": 59.6
         }
       ]
     },
     "20000": {
       "target_rate": 20000.0,
-      "median_sustained_sink_rate": 19278.2,
-      "min_sustained_sink_rate": 19259.0,
-      "max_sustained_sink_rate": 19297.0,
-      "median_achieved_produce_rate": 19214.5,
-      "median_peak_lag_rows": 887,
+      "median_sustained_sink_rate": 19973.2,
+      "min_sustained_sink_rate": 19960.9,
+      "max_sustained_sink_rate": 19981.3,
+      "median_achieved_produce_rate": 19961.2,
+      "median_peak_lag_rows": 1451,
       "trials": [
         {
           "target_rate": 20000.0,
-          "rows_produced": 300000,
-          "achieved_produce_rate": 19251.1,
-          "sustained_sink_rate": 19297.0,
-          "rows_committed_at_producer_end": 297000,
-          "peak_lag_rows": 887,
+          "rows_produced": 1200000,
+          "achieved_produce_rate": 19951.6,
+          "sustained_sink_rate": 19960.9,
+          "rows_committed_at_producer_end": 1197000,
+          "peak_lag_rows": 1696,
           "lag_at_producer_end_rows": 0,
-          "production_seconds": 15.0
+          "production_seconds": 59.7
         },
         {
           "target_rate": 20000.0,
-          "rows_produced": 300000,
-          "achieved_produce_rate": 19214.5,
-          "sustained_sink_rate": 19278.2,
-          "rows_committed_at_producer_end": 297000,
-          "peak_lag_rows": 1479,
+          "rows_produced": 1200000,
+          "achieved_produce_rate": 19968.9,
+          "sustained_sink_rate": 19981.3,
+          "rows_committed_at_producer_end": 1197000,
+          "peak_lag_rows": 1451,
           "lag_at_producer_end_rows": 0,
-          "production_seconds": 15.0
+          "production_seconds": 59.6
         },
         {
           "target_rate": 20000.0,
-          "rows_produced": 300000,
-          "achieved_produce_rate": 19213.8,
-          "sustained_sink_rate": 19259.0,
-          "rows_committed_at_producer_end": 297000,
-          "peak_lag_rows": 875,
+          "rows_produced": 1200000,
+          "achieved_produce_rate": 19961.2,
+          "sustained_sink_rate": 19973.2,
+          "rows_committed_at_producer_end": 1197000,
+          "peak_lag_rows": 1396,
           "lag_at_producer_end_rows": 0,
-          "production_seconds": 15.0
+          "production_seconds": 59.6
         }
       ]
     },
     "50000": {
       "target_rate": 50000.0,
-      "median_sustained_sink_rate": 24872.3,
-      "min_sustained_sink_rate": 24454.2,
-      "max_sustained_sink_rate": 24961.6,
-      "median_achieved_produce_rate": 39962.9,
-      "median_peak_lag_rows": 121868,
+      "median_sustained_sink_rate": 24518.9,
+      "min_sustained_sink_rate": 24248.8,
+      "max_sustained_sink_rate": 24603.3,
+      "median_achieved_produce_rate": 43113.7,
+      "median_peak_lag_rows": 1020715,
       "trials": [
         {
           "target_rate": 50000.0,
-          "rows_produced": 300000,
-          "achieved_produce_rate": 40097.1,
-          "sustained_sink_rate": 24454.2,
-          "rows_committed_at_producer_end": 181000,
-          "peak_lag_rows": 120768,
-          "lag_at_producer_end_rows": 117435,
-          "production_seconds": 7.0
+          "rows_produced": 2400000,
+          "achieved_produce_rate": 38610.9,
+          "sustained_sink_rate": 24603.3,
+          "rows_committed_at_producer_end": 1459000,
+          "peak_lag_rows": 947311,
+          "lag_at_producer_end_rows": 935854,
+          "production_seconds": 58.1
         },
         {
           "target_rate": 50000.0,
-          "rows_produced": 300000,
-          "achieved_produce_rate": 39962.9,
-          "sustained_sink_rate": 24872.3,
-          "rows_committed_at_producer_end": 183000,
-          "peak_lag_rows": 121868,
-          "lag_at_producer_end_rows": 113877,
-          "production_seconds": 7.0
+          "rows_produced": 2400000,
+          "achieved_produce_rate": 43113.7,
+          "sustained_sink_rate": 24248.8,
+          "rows_committed_at_producer_end": 1347000,
+          "peak_lag_rows": 1059832,
+          "lag_at_producer_end_rows": 1051066,
+          "production_seconds": 54.6
         },
         {
           "target_rate": 50000.0,
-          "rows_produced": 300000,
-          "achieved_produce_rate": 39803.8,
-          "sustained_sink_rate": 24961.6,
-          "rows_committed_at_producer_end": 183000,
-          "peak_lag_rows": 122987,
-          "lag_at_producer_end_rows": 113424,
-          "production_seconds": 7.0
+          "rows_produced": 2400000,
+          "achieved_produce_rate": 43241.5,
+          "sustained_sink_rate": 24518.9,
+          "rows_committed_at_producer_end": 1377000,
+          "peak_lag_rows": 1020715,
+          "lag_at_producer_end_rows": 1020713,
+          "production_seconds": 55.1
         }
       ]
     },
     "MAX": {
       "target_rate": 0.0,
-      "median_sustained_sink_rate": 24572.0,
-      "min_sustained_sink_rate": 24005.3,
-      "max_sustained_sink_rate": 25067.3,
-      "median_achieved_produce_rate": 39727.4,
-      "median_peak_lag_rows": 119474,
+      "median_sustained_sink_rate": 24654.5,
+      "min_sustained_sink_rate": 24238.4,
+      "max_sustained_sink_rate": 25093.1,
+      "median_achieved_produce_rate": 42921.5,
+      "median_peak_lag_rows": 1007711,
       "trials": [
         {
           "target_rate": 0.0,
-          "rows_produced": 300000,
-          "achieved_produce_rate": 39850.9,
-          "sustained_sink_rate": 25067.3,
-          "rows_committed_at_producer_end": 186000,
-          "peak_lag_rows": 119474,
-          "lag_at_producer_end_rows": 111938,
-          "production_seconds": 7.0
+          "rows_produced": 2400000,
+          "achieved_produce_rate": 41252.8,
+          "sustained_sink_rate": 24654.5,
+          "rows_committed_at_producer_end": 1401000,
+          "peak_lag_rows": 1006503,
+          "lag_at_producer_end_rows": 995160,
+          "production_seconds": 56.6
         },
         {
           "target_rate": 0.0,
-          "rows_produced": 300000,
-          "achieved_produce_rate": 39727.4,
-          "sustained_sink_rate": 24572.0,
-          "rows_committed_at_producer_end": 182000,
-          "peak_lag_rows": 119582,
-          "lag_at_producer_end_rows": 115206,
-          "production_seconds": 7.0
+          "rows_produced": 2400000,
+          "achieved_produce_rate": 42921.5,
+          "sustained_sink_rate": 24238.4,
+          "rows_committed_at_producer_end": 1358000,
+          "peak_lag_rows": 1040888,
+          "lag_at_producer_end_rows": 1037237,
+          "production_seconds": 55.1
         },
         {
           "target_rate": 0.0,
-          "rows_produced": 300000,
-          "achieved_produce_rate": 36920.8,
-          "sustained_sink_rate": 24005.3,
-          "rows_committed_at_producer_end": 190000,
-          "peak_lag_rows": 116686,
-          "lag_at_producer_end_rows": 107540,
-          "production_seconds": 7.5
+          "rows_produced": 2400000,
+          "achieved_produce_rate": 43439.5,
+          "sustained_sink_rate": 25093.1,
+          "rows_committed_at_producer_end": 1392000,
+          "peak_lag_rows": 1007711,
+          "lag_at_producer_end_rows": 1005212,
+          "production_seconds": 54.6
         }
       ]
     }
