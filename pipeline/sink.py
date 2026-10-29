@@ -147,7 +147,7 @@ class SinkConsumer:
         self.latencies_ms: List[float] = []
         # One entry per flushed batch: (partition, reason, per-row latencies in ms).
         # reason is "size", "timeout" or "final" (end-of-run flush of a partial batch).
-        self.batch_latencies: List[Tuple[int, str, List[float]]] = []
+        self.batch_latencies: List[Tuple[int, str, List[float], float]] = []  # partition, reason, latencies, wall-clock commit time
 
     def _init_duckdb_state(self):
         # On Windows, terminating a child process can briefly hold file locks.
@@ -284,7 +284,7 @@ class SinkConsumer:
 
         batch_lat = [max(0.0, now_epoch_ms - rec.get("produce_epoch_ms", now_epoch_ms)) for rec in records]
         self.latencies_ms.extend(batch_lat)
-        self.batch_latencies.append((partition, reason, batch_lat))
+        self.batch_latencies.append((partition, reason, batch_lat, time.time()))
 
         if self.mode == "at-least-once":
             # Mode A: write file directly, then commit offset to Kafka

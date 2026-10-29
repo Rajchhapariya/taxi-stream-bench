@@ -24,7 +24,7 @@ from pipeline.sink import SinkConsumer
 
 TOPIC = "trips_tp"
 SAMPLE_S = 0.5
-WARMUP_FRACTION = 0.2
+WARMUP_S = 30.0
 
 
 def run_single_throughput_trial(target_rate: float, num_records: int, batch_size: int, batch_timeout: float) -> Dict[str, Any]:
@@ -58,7 +58,7 @@ def run_single_throughput_trial(target_rate: float, num_records: int, batch_size
 
     first = next((s for s in samples if s[1] > 0), samples[0])
     span = max(0.001, t_end - first[0])
-    w_start = first[0] + WARMUP_FRACTION * span
+    w_start = first[0] + WARMUP_S
     w0 = min((s for s in samples if s[0] >= w_start), key=lambda s: s[0], default=first)
     window = max(0.001, t_end - w0[0])
     # Both rates are measured over the same window, after the warm-up fraction.
@@ -112,7 +112,7 @@ def run_throughput_benchmark(rates: List[float], repetitions: int, batch_size: i
         }
     write_result("throughput_benchmark.json", {
         "parameters": {"batch_size": batch_size, "batch_timeout_s": batch_timeout, "sample_interval_s": SAMPLE_S,
-                       "warmup_fraction": WARMUP_FRACTION, "repetitions": repetitions,
+                       "warmup_s": WARMUP_S, "repetitions": repetitions,
                        "records_per_target": {("MAX" if k == 0.0 else str(int(k))): v for k, v in records_for_rate.items()}},
         "by_target_rate": results,
     }, force_local=True)
@@ -131,7 +131,9 @@ def main():
     if args.fresh:
         clear_partial("throughput")
     rates = [5000.0, 20000.0, 50000.0, 0.0]
-    records = {5000.0: 100000, 20000.0: 300000, 50000.0: 300000, 0.0: 300000}
+    # 60 s of production at the target rate (30 s warm-up + 30 s measured). The 50k target and the
+    # unthrottled run are capped by what the producer process can generate, so they get 2.4M rows.
+    records = {5000.0: 300000, 20000.0: 1200000, 50000.0: 2400000, 0.0: 2400000}
     run_throughput_benchmark(rates, args.repetitions, args.batch_size, args.batch_timeout, records, args.max_new)
 
 

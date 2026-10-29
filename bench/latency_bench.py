@@ -6,8 +6,8 @@ can absorb, so queueing backlog does not inflate the numbers (the first version 
 input at once and measured the backlog). The sink flushes a partition when it holds B rows or when
 T seconds have passed since that partition's last flush, whichever comes first.
 
-Excluded from the percentiles: the first batch of every partition (warm-up) and the partial batches
-flushed when the run ends. The flush-reason counts show how many batches were closed by size and
+Excluded from the percentiles: every batch committed during the first 30 s of production (warm-up)
+and the partial batches flushed when the run ends. The flush-reason counts show how many batches were closed by size and
 how many by the timer.
 """
 
@@ -23,18 +23,20 @@ from bench.common import (BASE_DIR, TrialBudget, clear_partial, load_partial, pe
                           start_producer_process, topic_end_total, write_result)
 from pipeline.sink import SinkConsumer
 
+WARMUP_S = 30.0
 TOPIC = "trips_lat"
 PARTITIONS = 6
 
 
-def run_single_latency_trial(batch_size: int, rate: float, duration_s: float, batch_timeout: float) -> Dict[str, Any]:
+def run_single_latency_trial(batch_size: int, rate: float, duration_s: float, batch_timeout: float,
+                             warmup_s: float = 30.0) -> Dict[str, Any]:
     lake = os.path.join(BASE_DIR, "lake_latency_trial")
     broker_dir = os.path.join(BASE_DIR, "lake_latency_broker")
     stats_out = os.path.join(BASE_DIR, "lake_latency_producer_stats.json")
     for d in (lake, broker_dir):
         shutil.rmtree(d, ignore_errors=True)
     os.environ["LOCAL_BROKER_DIR"] = broker_dir
-    records = int(rate * duration_s)
+    records = int(rate * (duration_s + warmup_s))
 
     sink = SinkConsumer(mode="effectively-once", batch_size=batch_size, batch_timeout=batch_timeout,
                         lake_dir=lake, state_db_path=os.path.join(lake, "sink_state.duckdb"),
@@ -44,6 +46,7 @@ def run_single_latency_trial(batch_size: int, rate: float, duration_s: float, ba
     time.sleep(0.2)
 
     prod = start_producer_process(TOPIC, broker_dir, rate, records, stats_out)
+    t_prod_start = time.time()
     max_lag = 0
     while prod.poll() is None:
         time.sleep(0.5)
@@ -57,20 +60,18 @@ def run_single_latency_trial(batch_size: int, rate: float, duration_s: float, ba
     sink.running = False
     t_sink.join(timeout=30)
 
-    seen_first = set()
+    # Batches committed during the first warmup_s seconds of production are dropped.
     lats: List[float] = []
     reasons = {"size": 0, "timeout": 0, "final": 0}
-    for partition, reason, batch_lat in sink.batch_latencies:
+    for partition, reason, batch_lat, committed_at in sink.batch_latencies:
         reasons[reason] += 1
-        if partition not in seen_first:
-            seen_first.add(partition)
-            continue
-        if reason == "final":
+        if committed_at < t_prod_start + warmup_s or reason == "final":
             continue
         lats.extend(batch_lat)
 
     return {
         "batch_size": batch_size,
+        "warmup_s": warmup_s,
         "rows_produced": produced_total,
         "rows_in_percentiles": len(lats),
         "p50_ms": round(percentile(lats, 50), 1),
@@ -98,7 +99,7 @@ def run_latency_benchmark(batch_sizes: List[int], repetitions: int, rate: float,
                 if not budget.take():
                     print("Stopped after budget; run again to continue.")
                     return None
-                saved[key] = run_single_latency_trial(b, rate, duration_s, batch_timeout)
+                saved[key] = run_single_latency_trial(b, rate, duration_s, batch_timeout, WARMUP_S)
                 save_partial("latency", saved)
             t = saved[key]
             print(f"  run {rep}: p50={t['p50_ms']} p95={t['p95_ms']} p99={t['p99_ms']} ms | "
@@ -118,7 +119,7 @@ def run_latency_benchmark(batch_sizes: List[int], repetitions: int, rate: float,
     write_result("latency_benchmark.json", {
         "parameters": {
             "producer_rate_events_per_s": rate, "duration_s": duration_s, "batch_timeout_s": batch_timeout,
-            "repetitions": repetitions, "partitions": PARTITIONS,
+            "repetitions": repetitions, "partitions": PARTITIONS, "warmup_s": WARMUP_S,
             "batch_size_is_per_partition": True,
             "spec_batch_sizes": [1000, 10000, 50000],
             "note": "Sizes outside the spec set are extra points to show where the timer takes over.",

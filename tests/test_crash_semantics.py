@@ -48,4 +48,4 @@ def test_flush_records_reason_and_latencies(tmp_path, monkeypatch):
     sink, _ = _sink(tmp_path, monkeypatch, "effectively-once")
     load_batch(sink, 2, 0, 50)
     sink._flush_partition(2, "timeout")
-    assert [(p, r, len(l)) for p, r, l in sink.batch_latencies] == [(2, "timeout", 50)]
+    assert [(p, r, len(l)) for p, r, l, _t in sink.batch_latencies] == [(2, "timeout", 50)]
