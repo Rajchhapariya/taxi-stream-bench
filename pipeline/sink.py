@@ -59,12 +59,24 @@ PARQUET_SCHEMA = pa.schema([
 
 
 def clean_orphan_tmp_files(lake_dir: str):
-    """Removes orphan .tmp files left by killed or crashed sink processes."""
+    """Removes orphan .tmp files and truncated write fragments left by killed sink processes."""
     for root, _, files in os.walk(lake_dir):
         for f in files:
+            fp = os.path.join(root, f)
             if f.endswith(".tmp"):
                 try:
-                    os.remove(os.path.join(root, f))
+                    os.remove(fp)
+                except OSError:
+                    pass
+            elif f.endswith(".parquet"):
+                try:
+                    if os.path.getsize(fp) < 12:
+                        os.remove(fp)
+                    else:
+                        with open(fp, "rb") as fh:
+                            fh.seek(-4, os.SEEK_END)
+                            if fh.read(4) != b"PAR1":
+                                os.remove(fp)
                 except OSError:
                     pass
 
@@ -359,7 +371,7 @@ class SinkConsumer:
         self,
         max_messages: Optional[int] = None,
         max_seconds: Optional[float] = None,
-        idle_exit_polls: Optional[int] = 20,
+        idle_exit_polls: Optional[int] = 100,
     ) -> Dict[str, Any]:
         start_time = time.time()
         messages_polled = 0
@@ -392,6 +404,8 @@ class SinkConsumer:
                                 self._flush_partition(part, "final")
                         break
                 else:
+                    if hasattr(self.consumer, "assignment") and not self.consumer.assignment():
+                        continue
                     empty_polls += 1
                     if idle_exit_polls is not None and empty_polls >= idle_exit_polls:
                         for part in range(self.num_partitions):

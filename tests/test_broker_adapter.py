@@ -31,6 +31,10 @@ class FakeConfluentConsumer:
         self.calls.append(("get_watermark_offsets", tp.topic, tp.partition))
         return (0, 1234)
 
+    def assignment(self):
+        self.calls.append(("assignment",))
+        return [EmulatedTopicPartition("trips", 0)]
+
     def close(self):
         self.calls.append(("close",))
 

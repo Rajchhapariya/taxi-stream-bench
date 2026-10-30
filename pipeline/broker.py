@@ -357,6 +357,11 @@ class LocalConsumer:
         high = self.engine.peek_end_offset(topic, p)
         return (0, high)
 
+    def assignment(self) -> List[Any]:
+        if not self.subscribed_topics:
+            return []
+        return [EmulatedTopicPartition(t, p) for t in self.subscribed_topics for p in range(self.num_partitions)]
+
     def close(self):
         self.engine.close()
 
@@ -401,6 +406,10 @@ class KafkaConsumerAdapter:
     def poll(self, timeout: float = 0.05):
         self._start()
         return self._c.poll(timeout)
+
+    def assignment(self) -> List[Any]:
+        self._start()
+        return self._c.assignment()
 
     def commit(self, offsets: Optional[List[Any]] = None):
         self._start()

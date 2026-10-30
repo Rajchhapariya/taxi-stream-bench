@@ -106,6 +106,7 @@ def run_single_crash_experiment(config: Tuple[str, str, bool], variant: Tuple[st
                 sys.executable, "-u", "-m", "pipeline.sink", "--mode", mode,
                 "--lake-dir", lake_dir, "--state-db", state_db,
                 "-B", str(batch_size), "-T", str(batch_timeout), "--topic", trial_topic,
+                "--group-id", f"{trial_topic}_grp",
                 "--crash-prob", str(prob), "--crash-seed", str(seed * 1000 + launches["n"]),
             ]
             if broker == "kafka":

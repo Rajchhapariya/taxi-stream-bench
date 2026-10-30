@@ -134,14 +134,30 @@ def hard_kill_process(proc: subprocess.Popen) -> None:
         pass
 
 
+def is_valid_parquet(path: str) -> bool:
+    """Checks if a Parquet file has valid size and magic footer bytes."""
+    try:
+        if os.path.getsize(path) < 12:
+            return False
+        with open(path, "rb") as f:
+            f.seek(-4, os.SEEK_END)
+            return f.read(4) == b"PAR1"
+    except Exception:
+        return False
+
+
 def lake_stats(lake_dir: str) -> Dict[str, Any]:
-    files = glob.glob(os.path.join(lake_dir, "**", "*.parquet"), recursive=True)
+    all_files = glob.glob(os.path.join(lake_dir, "**", "*.parquet"), recursive=True)
+    if not all_files:
+        return {"files": 0, "rows": 0, "unique_row_ids": 0, "bytes": 0}
+    # Filter out files truncated mid-write by hard-kills
+    files = [f for f in all_files if is_valid_parquet(f)]
     if not files:
         return {"files": 0, "rows": 0, "unique_row_ids": 0, "bytes": 0}
-    pattern = os.path.join(lake_dir, "**", "*.parquet").replace("\\", "/")
+    norm_files = [f.replace("\\", "/") for f in files]
     con = duckdb.connect()
     rows, unique = con.execute(
-        f"SELECT count(*), count(DISTINCT row_id) FROM read_parquet('{pattern}')"
+        "SELECT count(*), count(DISTINCT row_id) FROM read_parquet(?)", [norm_files]
     ).fetchone()
     con.close()
     return {
@@ -153,12 +169,15 @@ def lake_stats(lake_dir: str) -> Dict[str, Any]:
 
 
 def lake_row_ids(lake_dir: str) -> Set[int]:
-    files = glob.glob(os.path.join(lake_dir, "**", "*.parquet"), recursive=True)
+    all_files = glob.glob(os.path.join(lake_dir, "**", "*.parquet"), recursive=True)
+    if not all_files:
+        return set()
+    files = [f for f in all_files if is_valid_parquet(f)]
     if not files:
         return set()
-    pattern = os.path.join(lake_dir, "**", "*.parquet").replace("\\", "/")
+    norm_files = [f.replace("\\", "/") for f in files]
     con = duckdb.connect()
-    ids = {r[0] for r in con.execute(f"SELECT DISTINCT row_id FROM read_parquet('{pattern}')").fetchall()}
+    ids = {r[0] for r in con.execute("SELECT DISTINCT row_id FROM read_parquet(?)", [norm_files]).fetchall()}
     con.close()
     return ids
 
