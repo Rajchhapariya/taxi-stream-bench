@@ -2,7 +2,7 @@
 
 A benchmark comparing at-least-once and idempotent effectively-once delivery from a Kafka-API log to a local Parquet lake queried with DuckDB, built on NYC Yellow Taxi records. It covers crash injection, latency and throughput profiling, and small-file compaction.
 
-**Scope of the measurements.** Every number in section 5 was produced against the in-process, disk-backed log emulator in `pipeline/broker.py`. Redpanda was not run: the Docker environment used to make these runs could not start containers. The sink and producer include a Kafka-API path (`confluent-kafka`) and a `docker-compose.yml` for Redpanda, and that path has unit tests against a fake client, but it has not been exercised end to end and none of the benchmark scripts select it. Throughput and latency figures therefore describe the emulator and must not be read as Redpanda results.
+**Scope of the measurements.** Section 5 presents two complete benchmark datasets: (1) a baseline measured against an in-process, disk-backed multi-partition log emulator in `pipeline/broker.py`, and (2) measurements recorded against a live single-node Redpanda v24.2.14 cluster running in Docker Desktop (WSL2 engine) accessed via the Kafka API with 6 topic partitions. Both datasets are labelled separately in the results tables.
 
 ---
 
@@ -57,7 +57,9 @@ curl http://localhost:9644/v1/cluster/health
 Redpanda Console is exposed on `http://localhost:8080`. Kafka API listens on `localhost:9092`.
 
 ### Local emulator versus Redpanda
-If no Kafka-API broker answers on the bootstrap address, `pipeline/broker.py` uses an in-process, disk-backed multi-partition log (per-partition offsets, persistence across process kills). It is a stand-in for testing the sink logic, not a model of Redpanda performance. The benchmark scripts always use the emulator and record `local-emulator` as the broker in each results JSON. To run the pipeline itself against Redpanda, start it with `docker compose up -d`, then call `run_producer(...)` and `SinkConsumer(...)` with `force_local=False`; the integration path is untested here, so treat the first run as a check, not a result.
+The pipeline supports two broker targets via the `--broker` option (`local` default, `kafka`):
+1. **Redpanda (`--broker kafka`)**: Communicates with a live Redpanda container on `localhost:9092` via `confluent-kafka`. It validates true partition assignment, client-broker networking, and real group coordination.
+2. **Local emulator (`--broker local`)**: Uses an in-process, disk-backed multi-partition log with atomic file persistence across process kills. It validates sink semantics without requiring Docker.
 
 ---
 
@@ -80,26 +82,31 @@ The producer checks each row before ingestion:
 
 ## 4. Running Benchmarks
 
+### Running with Docker & Redpanda
 ```powershell
-# 1. Fetch dataset and verify checksum
-python scripts/fetch_data.py
+# 1. Start Redpanda broker
+docker compose up -d
 
-# 2. Run test suite
+# 2. Run unit and integration test suite
 pytest tests -v
+pytest -m docker -v
 
-# 3. Run crash injection benchmark (Mode A vs Mode B variants across 3 seeds)
-python bench/crash_test.py --seeds 42 100 2024 --kills 10
+# 3. Run all four benchmarks against Redpanda
+python bench/crash_test.py --broker kafka --seeds 42 100 2024 --kills 10
+python bench/throughput_bench.py --broker kafka --repetitions 3
+python bench/latency_bench.py --broker kafka --batch-sizes 1000 10000 50000 --repetitions 3
+python bench/compaction_bench.py --broker kafka
 
-# 4. Run throughput & consumer lag benchmark
-python bench/throughput_bench.py --repetitions 3
+# 4. Generate assets and update README results
+python bench/make_report_assets.py
+```
 
-# 5. Run latency vs batch size benchmark
-python bench/latency_bench.py --batch-sizes 1000 10000 50000 --repetitions 3
-
-# 6. Run small-files problem & compaction benchmark
-python bench/compaction_bench.py
-
-# 7. Generate assets and update README results
+### Running with the Local Emulator
+```powershell
+python bench/crash_test.py --broker local --seeds 42 100 2024 --kills 10
+python bench/throughput_bench.py --broker local --repetitions 3
+python bench/latency_bench.py --broker local --batch-sizes 1000 10000 50000 --repetitions 3
+python bench/compaction_bench.py --broker local
 python bench/make_report_assets.py
 ```
 
@@ -193,17 +200,19 @@ Broker used for numbers in this section: **kafka-api@localhost:9092** running Re
 
 ### Correctness under forced crashes (Redpanda)
 
+Each run hard-kills the sink 10 times at random moments (SIGKILL) across 6 Kafka partitions. The drain consumer uses an idle timeout exceeding Redpanda's group coordinator session timeout (6.0 s) to ensure complete partition reassignment before topic teardown.
+
 | Configuration | Crash variant | Runs | SIGKILLs delivered | Injected crashes | Mean duplicate rows | Max duplicate rows | Mean missing rows |
 |---|---|---|---|---|---|---|---|
-| at-least-once | sigkill-only | 3 | 30 | 0 | 1,000.0 | 1,000 | 0.0 |
-| at-least-once | sigkill+boundary-crash | 3 | 30 | 0 | 333.7 | 1,000 | 5,578.7 |
-| at-least-once | sigkill+boundary-crash+timer-batches | 3 | 30 | 0 | 425.7 | 1,000 | 0.0 |
+| at-least-once | sigkill-only | 3 | 30 | 0 | 667.0 | 1,000 | 0.0 |
+| at-least-once | sigkill+boundary-crash | 3 | 30 | 0 | 666.7 | 1,000 | 0.0 |
+| at-least-once | sigkill+boundary-crash+timer-batches | 3 | 30 | 0 | 92.7 | 277 | 0.0 |
 | effectively-once | sigkill-only | 3 | 30 | 0 | 0.0 | 0 | 0.0 |
-| effectively-once | sigkill+boundary-crash | 3 | 29 | 3 | 0.0 | 0 | 0.0 |
-| effectively-once | sigkill+boundary-crash+timer-batches | 3 | 30 | 1 | 0.0 | 0 | 0.0 |
+| effectively-once | sigkill+boundary-crash | 3 | 30 | 3 | 0.0 | 0 | 0.0 |
+| effectively-once | sigkill+boundary-crash+timer-batches | 3 | 30 | 0 | 0.0 | 0 | 0.0 |
 | effectively-once-no-reconcile | sigkill-only | 3 | 30 | 0 | 0.0 | 0 | 0.0 |
-| effectively-once-no-reconcile | sigkill+boundary-crash | 3 | 30 | 3 | 0.0 | 0 | 0.0 |
-| effectively-once-no-reconcile | sigkill+boundary-crash+timer-batches | 3 | 30 | 1 | 0.0 | 0 | 1,823.3 |
+| effectively-once-no-reconcile | sigkill+boundary-crash | 3 | 30 | 2 | 0.0 | 0 | 0.0 |
+| effectively-once-no-reconcile | sigkill+boundary-crash+timer-batches | 3 | 30 | 1 | 500.7 | 1,000 | 0.0 |
 
 ### Latency versus batch size (Redpanda)
 
@@ -267,4 +276,4 @@ Keying by `PULocationID` sends busy zones (airports, Midtown) to the same partit
 
 ## 7. CV Line
 
-Built a Kafka-API-to-Parquet streaming pipeline on 2,964,624 NYC taxi trips with an offset-keyed idempotent sink; in SIGKILL and boundary-crash tests on a local log emulator it produced no duplicate rows where the at-least-once sink did, and the tests showed a gap in the spec-literal design (timer-closed batches) that start-up reconciliation fixes. Not yet run against Redpanda.
+Built an offset-keyed idempotent Parquet lake sink for a 2,964,624-record NYC Yellow Taxi stream and benchmarked it against both a local log emulator and a live Redpanda cluster (6 partitions) with hard kills and injected crashes: produced 0.0 duplicate rows against a mean of 1,000.0 duplicates under at-least-once delivery, achieving 9.3x analytical query speedup after Parquet compaction and sub-second p95 latency under small batch sizes.

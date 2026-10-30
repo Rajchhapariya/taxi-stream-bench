@@ -47,5 +47,10 @@ Hardware and software environment used for the throughput, latency, compaction, 
 
 ## Environment of the recorded benchmark results
 
-The tables in `README.md` and `report/report.pdf` were not produced on the Windows machine described above. They were produced in a Linux virtual machine (Ubuntu, kernel 6.8, 2 logical CPUs, 3,915 MB RAM, Python 3.10.12) running on the same i7-13620H laptop, against the local log emulator in `pipeline/broker.py`. Docker and Redpanda were not available there. The hardware and Redpanda rows above describe the intended Docker Desktop setup, not the measured one. Each results JSON in `results/` records the broker label and the host details of its own run.
+This project records two complete benchmark datasets:
+
+1. **Redpanda runs (`*_redpanda.json`)**: Measured directly on the host machine described above (Windows 11, Intel Core i7-13620H, 16 GB DDR5 RAM, NVMe SSD) with Docker Desktop 29.9.2 (WSL2 engine, kernel 6.18.54.1), Python 3.11.9, and Redpanda v24.2.14. All traffic flowed through the Kafka API against 6 topic partitions.
+2. **Disk-backed emulator runs (`*.json` without `_redpanda`)**: Measured in a Linux virtual machine (Ubuntu, kernel 6.8, 2 logical CPUs, 3,915 MB RAM, Python 3.10.12) running on the same laptop hardware against the in-process multi-partition log emulator in `pipeline/broker.py`.
+
+Each results JSON in `results/` records the broker label and the host details of its own run.
 

@@ -269,6 +269,9 @@ def readme_block(crash, lat, tp, comp, val,
                    f"Environment: {rp_env.get('os', 'Windows 11')}, {rp_env.get('cpu', 'Intel')}, Python {rp_env.get('python', '3.11')}. "
                    "All runs communicated over the Kafka API against 6 topic partitions.\n")
         out.append("### Correctness under forced crashes (Redpanda)\n")
+        out.append("Each run hard-kills the sink 10 times at random moments (SIGKILL) across 6 Kafka partitions. "
+                   "The drain consumer uses an idle timeout exceeding Redpanda's group coordinator session timeout (6.0 s) "
+                   "to ensure complete partition reassignment before topic teardown.\n")
         out.append(md_table(*crash_table(crash_rp)) + "\n")
         if lat_rp:
             out.append("### Latency versus batch size (Redpanda)\n")

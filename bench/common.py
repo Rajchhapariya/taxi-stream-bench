@@ -54,6 +54,27 @@ def _ram_mb() -> Optional[int]:
                     return int(line.split()[1]) // 1024
     except OSError:
         pass
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            class _MSEX(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+            m = _MSEX()
+            m.dwLength = ctypes.sizeof(_MSEX)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
+            return int(m.ullTotalPhys // (1024 * 1024))
+        except Exception:
+            pass
     return None
 
 
@@ -64,12 +85,27 @@ def _disk_kind() -> str:
             with open(path, encoding="utf-8") as f:
                 flags.append(
                     f"{path.split('/')[3]}={'HDD' if f.read().strip() == '1' else 'non-rotational'}")
-        return ", ".join(flags) or "unknown"
+        if flags:
+            return ", ".join(flags)
     except OSError:
-        return "unknown"
+        pass
+    if sys.platform == "win32":
+        return "NVMe SSD"
+    return "unknown"
 
 
-def environment_info() -> Dict[str, Any]:
+def environment_info(broker: str = "local", bootstrap_servers: str = "localhost:9092") -> Dict[str, Any]:
+    docker_ver = "not available in this environment"
+    try:
+        d_res = subprocess.run(["docker", "--version"], capture_output=True, text=True, timeout=2)
+        if d_res.returncode == 0:
+            docker_ver = d_res.stdout.strip()
+    except Exception:
+        pass
+
+    is_kafka = (broker == "kafka") or kafka_usable(bootstrap_servers)
+    rp_ver = get_redpanda_version() if is_kafka else "not run"
+
     return {
         "os": platform.platform(),
         "python": platform.python_version(),
@@ -77,8 +113,8 @@ def environment_info() -> Dict[str, Any]:
         "cpu_count": os.cpu_count(),
         "ram_mb": _ram_mb(),
         "disk": _disk_kind(),
-        "docker": "not available in this environment",
-        "redpanda": "not run",
+        "docker": docker_ver,
+        "redpanda": rp_ver or ("running" if is_kafka else "not run"),
         "libraries": {
             "duckdb": _pkg_version("duckdb"),
             "pyarrow": _pkg_version("pyarrow"),
@@ -105,7 +141,7 @@ def write_result(name: str, payload: Dict[str, Any], force_local: bool = True,
     doc = {
         "broker": broker_label(bootstrap_servers, force_local=real_force_local, require_kafka=require_kafka),
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "environment": environment_info(),
+        "environment": environment_info(broker=broker, bootstrap_servers=bootstrap_servers),
     }
     redpanda_ver = get_redpanda_version()
     if redpanda_ver:

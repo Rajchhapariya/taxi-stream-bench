@@ -31,6 +31,10 @@ class FakeConfluentConsumer:
         self.calls.append(("get_watermark_offsets", tp.topic, tp.partition))
         return (0, 1234)
 
+    def position(self, partitions):
+        self.calls.append(("position", [(p.topic, p.partition) for p in partitions]))
+        return [EmulatedTopicPartition(p.topic, p.partition, 100) for p in partitions]
+
     def assignment(self):
         self.calls.append(("assignment",))
         return [EmulatedTopicPartition("trips", 0)]
@@ -107,4 +111,25 @@ def test_local_consumer_get_watermark_offsets(tmp_path):
     tp = EmulatedTopicPartition("trips", 0)
     offsets = consumer.get_watermark_offsets(tp)
     assert offsets == (0, 0)
+    consumer.close()
+
+
+def test_consumer_adapter_delegates_position():
+    fake = FakeConfluentConsumer()
+    adapter = KafkaConsumerAdapter(fake, num_partitions=6)
+    tp = EmulatedTopicPartition("trips", 3)
+    pos = adapter.position([tp])
+    assert len(pos) == 1
+    assert pos[0].offset == 100
+    assert ("position", [("trips", 3)]) in fake.calls
+
+
+def test_local_consumer_position(tmp_path):
+    engine = broker.LocalBrokerEngine(state_dir=str(tmp_path), num_partitions=6)
+    consumer = broker.LocalConsumer(engine, group_id="test-grp", num_partitions=6)
+    consumer.subscribe(["trips"])
+    tp = EmulatedTopicPartition("trips", 2)
+    pos = consumer.position([tp])
+    assert len(pos) == 1
+    assert pos[0].offset == 0
     consumer.close()

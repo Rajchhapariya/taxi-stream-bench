@@ -371,7 +371,7 @@ class SinkConsumer:
         self,
         max_messages: Optional[int] = None,
         max_seconds: Optional[float] = None,
-        idle_exit_polls: Optional[int] = 100,
+        idle_exit_polls: Optional[int] = 200,
     ) -> Dict[str, Any]:
         start_time = time.time()
         messages_polled = 0
@@ -475,6 +475,7 @@ def main():
                         help="Mode B only: skip deleting Parquet files the manifest does not list")
     parser.add_argument("--require-kafka", action="store_true",
                         help="Fail instead of falling back to the local emulator")
+    parser.add_argument("--idle-exit-polls", type=int, default=200, help="Exit after N consecutive empty polls")
     args = parser.parse_args()
 
     sink = SinkConsumer(
@@ -495,7 +496,7 @@ def main():
         reconcile_orphans=not args.no_reconcile,
         require_kafka=args.require_kafka,
     )
-    sink.run(max_messages=args.max_messages, max_seconds=args.max_seconds)
+    sink.run(max_messages=args.max_messages, max_seconds=args.max_seconds, idle_exit_polls=args.idle_exit_polls)
 
 
 if __name__ == "__main__":

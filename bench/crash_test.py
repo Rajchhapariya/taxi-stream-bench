@@ -100,7 +100,7 @@ def run_single_crash_experiment(config: Tuple[str, str, bool], variant: Tuple[st
 
         launches = {"n": 0}
 
-        def launch(prob: float) -> subprocess.Popen:
+        def launch(prob: float, idle_polls: int = 200) -> subprocess.Popen:
             launches["n"] += 1
             cmd = [
                 sys.executable, "-u", "-m", "pipeline.sink", "--mode", mode,
@@ -108,6 +108,7 @@ def run_single_crash_experiment(config: Tuple[str, str, bool], variant: Tuple[st
                 "-B", str(batch_size), "-T", str(batch_timeout), "--topic", trial_topic,
                 "--group-id", f"{trial_topic}_grp",
                 "--crash-prob", str(prob), "--crash-seed", str(seed * 1000 + launches["n"]),
+                "--idle-exit-polls", str(idle_polls),
             ]
             if broker == "kafka":
                 cmd.extend(["--require-kafka", "--bootstrap-servers", bootstrap_servers])
@@ -143,7 +144,7 @@ def run_single_crash_experiment(config: Tuple[str, str, bool], variant: Tuple[st
 
         # Final run: no injection, runs until the topic is drained and the sink exits on its own.
         hard_kill_process(proc)
-        final = launch(0.0)
+        final = launch(0.0, idle_polls=200)
         try:
             final.wait(timeout=240)
             drain_completed = final.returncode == 0

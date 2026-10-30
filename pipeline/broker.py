@@ -362,6 +362,15 @@ class LocalConsumer:
             return []
         return [EmulatedTopicPartition(t, p) for t in self.subscribed_topics for p in range(self.num_partitions)]
 
+    def position(self, partitions: List[Any]) -> List[Any]:
+        out = []
+        for tp in partitions:
+            p = tp.partition if hasattr(tp, "partition") else int(tp)
+            t = tp.topic if hasattr(tp, "topic") else (self.subscribed_topics[0] if self.subscribed_topics else "")
+            cur = self.current_offsets.get(p, 0)
+            out.append(EmulatedTopicPartition(t, p, cur))
+        return out
+
     def close(self):
         self.engine.close()
 
@@ -420,6 +429,12 @@ class KafkaConsumerAdapter:
 
     def get_watermark_offsets(self, partition: Any, timeout: float = 2.0, cached: bool = False) -> Tuple[int, int]:
         return self._c.get_watermark_offsets(partition, timeout=timeout, cached=cached)
+
+    def position(self, partitions: List[Any]) -> List[Any]:
+        self._start()
+        if hasattr(self._c, "position"):
+            return self._c.position(partitions)
+        return []
 
     def close(self):
         self._c.close()

@@ -14,10 +14,10 @@
 ) = {
   set page(
     paper: "a4",
-    margin: (top: 1.5cm, bottom: 1.5cm, left: 1.8cm, right: 1.8cm),
+    margin: (top: 1.0cm, bottom: 1.0cm, left: 1.2cm, right: 1.2cm),
     header: context {
       if counter(page).get().first() > 1 [
-        #set text(size: 8pt, fill: rgb("#64748b"), font: "Segoe UI")
+        #set text(size: 7pt, fill: rgb("#64748b"), font: "Segoe UI")
         #grid(
           columns: (1fr, 1fr),
           align(left)[*#title* | #org],
@@ -28,7 +28,7 @@
     },
     footer: context [
       #line(length: 100%, stroke: 0.5pt + rgb("#cbd5e1"))
-      #set text(size: 8pt, fill: rgb("#64748b"), font: "Segoe UI")
+      #set text(size: 7pt, fill: rgb("#64748b"), font: "Segoe UI")
       #grid(
         columns: (1fr, 1fr),
         align(left)[Technical Benchmark Report | Version #version],
@@ -37,29 +37,29 @@
     ]
   )
 
-  set text(font: "Segoe UI", size: 9pt, fill: rgb("#0f172a"))
-  set par(justify: true, leading: 0.55em)
+  set text(font: "Segoe UI", size: 8pt, fill: rgb("#0f172a"))
+  set par(justify: true, leading: 0.45em)
 
   align(center)[
     #block(
       fill: rgb("#0f172a"),
-      inset: (x: 18pt, y: 13pt),
-      radius: 5pt,
+      inset: (x: 14pt, y: 8pt),
+      radius: 4pt,
       width: 100%
     )[
-      #text(size: 16pt, weight: "bold", fill: white)[#title]\
-      #v(2pt)
-      #text(size: 9.5pt, fill: rgb("#94a3b8"), weight: "medium")[#subtitle]\
-      #v(5pt)
-      #line(length: 40%, stroke: 0.5pt + rgb("#334155"))
+      #text(size: 14pt, weight: "bold", fill: white)[#title]\
+      #v(1.5pt)
+      #text(size: 8.5pt, fill: rgb("#94a3b8"), weight: "medium")[#subtitle]\
       #v(3pt)
-      #text(size: 7.5pt, fill: rgb("#cbd5e1"))[
+      #line(length: 30%, stroke: 0.5pt + rgb("#334155"))
+      #v(2pt)
+      #text(size: 7pt, fill: rgb("#cbd5e1"))[
   [Author:] #author #h(10pt) | #h(10pt) [Broker:] #if has-redpanda [#redpanda-broker-label (#redpanda-version) and #broker-label] else [#broker-label] #h(10pt) | #h(10pt) [Date:] #date
       ]
     ]
   ]
 
-  v(0.2cm)
+  v(0.08cm)
   body
 }
 
@@ -118,15 +118,15 @@
   #align(center)[
     #block(
       stroke: 0.5pt + rgb("#cbd5e1"),
-      radius: 5pt,
-      inset: 3pt,
+      radius: 4pt,
+      inset: 2pt,
       fill: rgb("#ffffff"),
       width: 100%
     )[
-      #image(img-path, width: 98%)
+      #image(img-path, width: 88%)
     ]
-    #v(2pt)
-    #text(size: 7.5pt, fill: rgb("#64748b"), style: "italic")[#caption-text]
+    #v(1.5pt)
+    #text(size: 7pt, fill: rgb("#64748b"), style: "italic")[#caption-text]
   ]
 ]
 
@@ -158,7 +158,7 @@ Kafka-style brokers cannot coordinate a two-phase commit with a file sink. When 
   )
 ]
 
-#v(0.15cm)
+#v(0.04cm)
 
 #grid(
   columns: (1fr, 1fr, 1fr, 1fr),
@@ -169,7 +169,7 @@ Kafka-style brokers cannot coordinate a two-phase commit with a file sink. When 
   stat-card("Compaction", compaction-speedup, "faster for the three queries", color: rgb("#f59e0b"))
 )
 
-#v(0.15cm)
+#v(0.04cm)
 
 == 2. Pipeline and Delivery Modes
 
@@ -177,7 +177,7 @@ Kafka-style brokers cannot coordinate a two-phase commit with a file sink. When 
   columns: (1.1fr, 1.3fr, 2.6fr),
   fill: (col, row) => if row == 0 { rgb("#f1f5f9") } else { none },
   stroke: 0.5pt + rgb("#cbd5e1"),
-  inset: 5pt,
+  inset: 2.8pt,
   [*Stage*], [*Implementation*], [*Responsibility*],
   [Producer], [`pipeline/producer.py`], [Replays records at a target rate, validates each row, adds `row_id` and `produce_ts`, keys by `PULocationID` across 6 partitions.],
   [Mode A], [At-least-once], [Writes the batch to `trips-p{P}-{uuid}.parquet`, then commits the offset to the broker. A kill in between replays the batch under a new name.],
@@ -185,7 +185,7 @@ Kafka-style brokers cannot coordinate a two-phase commit with a file sink. When 
   [Query layer], [`pipeline/queries.py`], [Three DuckDB aggregations over the date-partitioned Parquet files.]
 )
 
-#v(0.15cm)
+#v(0.04cm)
 
 == 3. Correctness Under Forced Crashes
 
@@ -199,7 +199,7 @@ Each run stages 30,000 accepted rows (8,000 in the timer variant), then hard-kil
   columns: (1.5fr, 1.7fr, 0.5fr, 0.9fr, 0.9fr, 0.9fr, 0.9fr, 0.9fr),
   fill: (col, row) => if row == 0 { rgb("#f1f5f9") } else { none },
   stroke: 0.5pt + rgb("#cbd5e1"),
-  inset: 3.5pt,
+  inset: 2.8pt,
   ..crash-cells
 )
 
@@ -210,12 +210,12 @@ Each run stages 30,000 accepted rows (8,000 in the timer variant), then hard-kil
     columns: (1.5fr, 1.7fr, 0.5fr, 0.9fr, 0.9fr, 0.9fr, 0.9fr, 0.9fr),
     fill: (col, row) => if row == 0 { rgb("#f1f5f9") } else { none },
     stroke: 0.5pt + rgb("#cbd5e1"),
-    inset: 3.5pt,
+    inset: 2.8pt,
     ..redpanda-crash-cells
   )
 ]
 
-#v(0.15cm)
+#v(0.04cm)
 
 Mode A duplicates rows in every injected variant and in some plain-kill runs, and never loses rows. Mode B produced no duplicates and no missing rows in any run. The row `effectively-once-no-reconcile` is Mode B built exactly as the build specification words it, which deletes temp files on restart but keeps a renamed file that the manifest does not list. With size-closed batches a replay reproduces the same file name and nothing is duplicated. With timer-closed batches the replay can cut a different offset range and both files stay: that variant leaked a mean of #noreconcile-dups duplicate rows per run, against #reconcile-dups once unlisted files are deleted on restart.
 
@@ -228,7 +228,7 @@ The producer runs in a separate process at a fixed rate that the sink absorbs wi
   "Figure 1: Left, p50, p95 and p99 end-to-end latency against batch size, with the batch timer drawn as a horizontal line (solid/dashed for Redpanda vs emulator). Right, producer and sink rates with peak lag for each target rate across both brokers."
 )
 
-#v(0.15cm)
+#v(0.04cm)
 
 #if has-redpanda [
   #text(weight: "bold", size: 8pt)[Table 2a: Latency on disk-backed log emulator]
@@ -238,7 +238,7 @@ The producer runs in a separate process at a fixed rate that the sink absorbs wi
   columns: (1.4fr, 0.9fr, 0.9fr, 1.3fr, 0.9fr, 1.6fr),
   fill: (col, row) => if row == 0 { rgb("#f1f5f9") } else { none },
   stroke: 0.5pt + rgb("#cbd5e1"),
-  inset: 4pt,
+  inset: 2.8pt,
   ..latency-cells
 )
 
@@ -249,12 +249,12 @@ The producer runs in a separate process at a fixed rate that the sink absorbs wi
     columns: (1.4fr, 0.9fr, 0.9fr, 1.3fr, 0.9fr, 1.6fr),
     fill: (col, row) => if row == 0 { rgb("#f1f5f9") } else { none },
     stroke: 0.5pt + rgb("#cbd5e1"),
-    inset: 4pt,
+    inset: 2.8pt,
     ..redpanda-latency-cells
   )
 ]
 
-#v(0.15cm)
+#v(0.04cm)
 
 Once B is large enough that a partition cannot fill before the timer fires, every batch is closed by the timer and latency stops depending on B. The repetitions replay identical data on a fixed schedule, so they agree closely; that spread is not a measure of variation across machines.
 
@@ -270,7 +270,7 @@ Producer and sink run in separate processes. Lag is rows on the topic minus rows
   columns: (1fr, 1.1fr, 1.3fr, 1.5fr, 1fr, 1.3fr),
   fill: (col, row) => if row == 0 { rgb("#f1f5f9") } else { none },
   stroke: 0.5pt + rgb("#cbd5e1"),
-  inset: 4pt,
+  inset: 2.8pt,
   ..throughput-cells
 )
 
@@ -281,12 +281,12 @@ Producer and sink run in separate processes. Lag is rows on the topic minus rows
     columns: (1fr, 1.1fr, 1.3fr, 1.5fr, 1fr, 1.3fr),
     fill: (col, row) => if row == 0 { rgb("#f1f5f9") } else { none },
     stroke: 0.5pt + rgb("#cbd5e1"),
-    inset: 4pt,
+    inset: 2.8pt,
     ..redpanda-throughput-cells
   )
 ]
 
-#v(0.15cm)
+#v(0.04cm)
 
 == 6. The Small-Files Problem and Compaction
 
@@ -300,7 +300,7 @@ The sink writes one file per micro-batch per partition, so the lake fills with s
   columns: (2.2fr, 1.2fr, 1.2fr, 1.3fr),
   fill: (col, row) => if row == 0 { rgb("#f1f5f9") } else { none },
   stroke: 0.5pt + rgb("#cbd5e1"),
-  inset: 4.5pt,
+  inset: 2.8pt,
   ..compaction-cells
 )
 
@@ -311,12 +311,12 @@ The sink writes one file per micro-batch per partition, so the lake fills with s
     columns: (2.2fr, 1.2fr, 1.2fr, 1.3fr),
     fill: (col, row) => if row == 0 { rgb("#f1f5f9") } else { none },
     stroke: 0.5pt + rgb("#cbd5e1"),
-    inset: 4.5pt,
+    inset: 2.8pt,
     ..redpanda-compaction-cells
   )
 ]
 
-#v(0.15cm)
+#v(0.04cm)
 
 == 7. Input Validation
 
@@ -326,11 +326,11 @@ The producer checks each row against four rules before publishing. Of #total-rec
   columns: (1.6fr, 1fr, 1fr),
   fill: (col, row) => if row == 0 { rgb("#f1f5f9") } else { none },
   stroke: 0.5pt + rgb("#cbd5e1"),
-  inset: 4.5pt,
+  inset: 2.8pt,
   ..reject-cells
 )
 
-#v(0.15cm)
+#v(0.04cm)
 
 == 8. Limitations
 
@@ -344,7 +344,7 @@ The producer checks each row against four rules before publishing. Of #total-rec
 4. *Partition skew.* Keying by `PULocationID` concentrates traffic on airport and Midtown zones. Salting the key, for example with `row_id mod 4`, spreads it at the cost of per-key ordering.
 5. *Compaction is offline.* It is not safe against a concurrent sink, and a crash between writing the merged file and deleting its inputs leaves duplicate rows visible until it is rerun.
 
-#v(0.15cm)
+#v(0.04cm)
 
 #block(
   fill: rgb("#f1f5f9"),
