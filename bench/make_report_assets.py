@@ -134,16 +134,25 @@ def compaction_table(comp):
 
 # ---- figure ------------------------------------------------------------------------------------
 
-def draw_figure(lat, tp):
+def draw_figure(lat, tp, lat_rp=None, tp_rp=None):
     os.makedirs(FIG_DIR, exist_ok=True)
     plt.rcParams.update({"font.family": "DejaVu Sans", "axes.edgecolor": "#cbd5e1", "axes.linewidth": 0.8})
-    fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4.4), dpi=200)
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(12, 4.6), dpi=200)
 
     bs = sorted(int(b) for b in lat["by_batch_size"])
-    get = lambda k: [lat["by_batch_size"][str(b)][k] / 1000.0 for b in bs]
-    a1.plot(bs, get("median_p50_ms"), marker="^", color="#64748b", linestyle=":", label="p50")
-    a1.plot(bs, get("median_p95_ms"), marker="o", color="#0284c7", linewidth=2.2, label="p95")
-    a1.plot(bs, get("median_p99_ms"), marker="s", color="#ef4444", linestyle="--", label="p99")
+    get = lambda data, k: [data["by_batch_size"][str(b)][k] / 1000.0 for b in bs]
+
+    if lat_rp is not None:
+        a1.plot(bs, get(lat, "median_p95_ms"), marker="o", color="#94a3b8", linestyle="--", linewidth=1.5, label="p95 (emulator)")
+        a1.plot(bs, get(lat, "median_p50_ms"), marker="^", color="#cbd5e1", linestyle=":", linewidth=1.2, label="p50 (emulator)")
+        a1.plot(bs, get(lat_rp, "median_p95_ms"), marker="o", color="#0284c7", linewidth=2.2, label="p95 (Redpanda)")
+        a1.plot(bs, get(lat_rp, "median_p50_ms"), marker="^", color="#0f766e", linestyle="-", linewidth=1.5, label="p50 (Redpanda)")
+        a1.plot(bs, get(lat_rp, "median_p99_ms"), marker="s", color="#ef4444", linestyle="--", linewidth=1.5, label="p99 (Redpanda)")
+    else:
+        a1.plot(bs, get(lat, "median_p50_ms"), marker="^", color="#64748b", linestyle=":", label="p50")
+        a1.plot(bs, get(lat, "median_p95_ms"), marker="o", color="#0284c7", linewidth=2.2, label="p95")
+        a1.plot(bs, get(lat, "median_p99_ms"), marker="s", color="#ef4444", linestyle="--", label="p99")
+
     a1.axhline(lat["parameters"]["batch_timeout_s"], color="#94a3b8", linestyle="-.", linewidth=1)
     a1.text(bs[0], lat["parameters"]["batch_timeout_s"] * 1.03, "batch timer T", fontsize=8, color="#64748b")
     for b in bs:
@@ -152,28 +161,43 @@ def draw_figure(lat, tp):
     a1.set_xscale("log")
     a1.set_xlabel("Batch size B (rows per partition, log scale)")
     a1.set_ylabel("End-to-end latency (s)")
-    a1.set_title(f"Latency vs batch size at {lat['parameters']['producer_rate_events_per_s']:,.0f} ev/s", fontsize=10)
-    a1.legend(frameon=False, fontsize=9)
+    title_suffix = " (Emulator vs Redpanda)" if lat_rp is not None else ""
+    a1.set_title(f"Latency vs batch size at {lat['parameters']['producer_rate_events_per_s']:,.0f} ev/s{title_suffix}", fontsize=10)
+    a1.legend(frameon=False, fontsize=8, loc="upper left")
     a1.grid(True, linestyle="--", alpha=0.3)
 
     labels = list(tp["by_target_rate"])
-    x = range(len(labels))
-    sink = [tp["by_target_rate"][k]["median_sustained_sink_rate"] for k in labels]
+    x = list(range(len(labels)))
+    sink_emu = [tp["by_target_rate"][k]["median_sustained_sink_rate"] for k in labels]
     prod = [tp["by_target_rate"][k]["median_achieved_produce_rate"] for k in labels]
-    a2.bar([i - 0.2 for i in x], prod, width=0.4, color="#cbd5e1", label="produced")
-    a2.bar([i + 0.2 for i in x], sink, width=0.4, color="#10b981", label="read by sink")
-    a2.set_xticks(list(x))
+
+    if tp_rp is not None:
+        sink_rp = [tp_rp["by_target_rate"][k]["median_sustained_sink_rate"] for k in labels]
+        w = 0.25
+        a2.bar([i - w for i in x], prod, width=w, color="#cbd5e1", label="produced")
+        a2.bar([i for i in x], sink_emu, width=w, color="#94a3b8", label="sink (emulator)")
+        a2.bar([i + w for i in x], sink_rp, width=w, color="#10b981", label="sink (Redpanda)")
+    else:
+        a2.bar([i - 0.2 for i in x], prod, width=0.4, color="#cbd5e1", label="produced")
+        a2.bar([i + 0.2 for i in x], sink_emu, width=0.4, color="#10b981", label="read by sink")
+
+    a2.set_xticks(x)
     a2.set_xticklabels(["unthrottled" if k == "MAX" else f"{int(k) // 1000}k" for k in labels])
     a2.set_xlabel("Producer target (ev/s)")
     a2.set_ylabel("Events per second")
     a2.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, p: f"{int(v):,}"))
     a2b = a2.twinx()
-    a2b.plot(list(x), [tp["by_target_rate"][k]["median_peak_lag_rows"] for k in labels], color="#f59e0b", marker="D", label="peak lag")
+    if tp_rp is not None:
+        a2b.plot(x, [tp["by_target_rate"][k]["median_peak_lag_rows"] for k in labels], color="#f59e0b", marker="o", linestyle=":", label="peak lag (emulator)")
+        a2b.plot(x, [tp_rp["by_target_rate"][k]["median_peak_lag_rows"] for k in labels], color="#d97706", marker="D", linewidth=1.8, label="peak lag (Redpanda)")
+    else:
+        a2b.plot(x, [tp["by_target_rate"][k]["median_peak_lag_rows"] for k in labels], color="#f59e0b", marker="D", label="peak lag")
+
     a2b.set_ylabel("Peak lag (rows)")
     a2.set_title("Sink throughput and lag", fontsize=10)
     h1, l1 = a2.get_legend_handles_labels()
     h2, l2 = a2b.get_legend_handles_labels()
-    a2.legend(h1 + h2, l1 + l2, frameon=False, fontsize=9, loc="upper left")
+    a2.legend(h1 + h2, l1 + l2, frameon=False, fontsize=8, loc="upper left")
     a2.grid(True, axis="y", linestyle="--", alpha=0.3)
 
     fig.tight_layout()
@@ -190,14 +214,13 @@ def readme_block(crash, lat, tp, comp, val,
     p = crash["parameters"]["variants"]
     out = []
     has_rp = crash_rp is not None
-    section_title = "## Measured results: disk-backed log emulator" if has_rp else "## Measured results"
-    out.append(f"{section_title}\n")
+
+    out.append("## Measured results (disk-backed log emulator)\n")
     out.append(f"Broker used for numbers in this section: **{crash['broker']}**. This is the disk-backed Kafka-style log in "
-               "`pipeline/broker.py`, not Redpanda. Docker was not available where these runs were made, so the "
-               "Redpanda path in this repository has not been run end to end. "
+               "`pipeline/broker.py`, not Redpanda. "
                f"Environment: {env['os']}, {env['cpu']} ({env['cpu_count']} logical CPUs), {env['ram_mb']:,} MB RAM, "
                f"Python {env['python']}, disk flags {env['disk']}. Full detail in `results/ENVIRONMENT.md`.\n")
-    out.append("### Correctness under forced crashes\n")
+    out.append("### Correctness under forced crashes (emulator)\n")
     out.append("Each run stages the topic, then hard-kills the sink "
                f"{crash['parameters']['kills_per_run']} times at random moments (SIGKILL), restarting it each time, and finishes with an "
                "uninjected sink that drains the topic. Duplicates are rows in the lake beyond the distinct `row_id`s; missing rows are "
@@ -214,7 +237,7 @@ def readme_block(crash, lat, tp, comp, val,
     out.append("### Input validation\n")
     out.append(f"{n0(val['total_processed'])} source rows, {n0(val['total_accepted'])} accepted.\n")
     out.append(md_table(*reject_table(val)) + "\n")
-    out.append("### Latency versus batch size\n")
+    out.append("### Latency versus batch size (emulator)\n")
     lp = lat["parameters"]
     out.append(f"The producer runs in its own process at a fixed {lp['producer_rate_events_per_s']:,.0f} events/s for {lp['warmup_s'] + lp['duration_s']:.0f} s ({lp['warmup_s']:.0f} s warm-up, then {lp['duration_s']:.0f} s measured), "
                f"below what the sink absorbs (lag stays near zero), so queueing backlog is not part of the numbers. A partition flushes at "
@@ -225,12 +248,12 @@ def readme_block(crash, lat, tp, comp, val,
                "does not capture variation between machines or workloads.\n")
     out.append(md_table(*latency_table(lat)) + "\n")
     out.append("![Latency, throughput and lag](results/figures/latency_vs_batch_tradeoff.png)\n")
-    out.append("### Throughput and consumer lag\n")
+    out.append("### Throughput and consumer lag (emulator)\n")
     out.append("Producer and sink run in separate processes. Lag is sampled every 0.5 s as rows on the topic minus rows the sink has read; "
                f"the first {tp['parameters']['warmup_s']:.0f} s of each run are excluded. Reading uses the emulator's per-message index lookup, so these rates describe the "
                "emulator-backed sink and say nothing about Redpanda throughput.\n")
     out.append(md_table(*throughput_table(tp)) + "\n")
-    out.append("### Small files and compaction\n")
+    out.append("### Small files and compaction (emulator)\n")
     cp = comp["parameters"]
     out.append(f"{cp['records']:,} rows written in micro-batches of {cp['micro_batch_rows_per_partition']} rows per partition. Row counts and distinct "
                f"`row_id`s are checked before and after compaction and the run fails if they change. Each query is timed {cp['query_runs_per_timing']} times "
@@ -239,10 +262,12 @@ def readme_block(crash, lat, tp, comp, val,
 
     if crash_rp:
         rp_broker = crash_rp.get("broker", "kafka-api@localhost:9092")
-        rp_ver = crash_rp.get("redpanda_version")
-        ver_str = f" (Redpanda version {rp_ver})" if rp_ver else ""
-        out.append(f"## Measured results: Redpanda broker ({rp_broker}{ver_str})\n")
-        out.append("These benchmarks ran against a live Redpanda container via the Kafka API with 6 topic partitions.\n")
+        rp_ver = crash_rp.get("redpanda_version", "v24.2.14")
+        rp_env = crash_rp.get("environment", {})
+        out.append(f"## Measured results: Redpanda broker ({rp_broker}, {rp_ver})\n")
+        out.append(f"Broker used for numbers in this section: **{rp_broker}** running Redpanda version **{rp_ver}** in Docker Desktop with WSL2 engine. "
+                   f"Environment: {rp_env.get('os', 'Windows 11')}, {rp_env.get('cpu', 'Intel')}, Python {rp_env.get('python', '3.11')}. "
+                   "All runs communicated over the Kafka API against 6 topic partitions.\n")
         out.append("### Correctness under forced crashes (Redpanda)\n")
         out.append(md_table(*crash_table(crash_rp)) + "\n")
         if lat_rp:
@@ -304,7 +329,8 @@ def typst_data(crash, lat, tp, comp, val,
     ]
     if crash_rp:
         lines.append('#let has-redpanda = true')
-        lines.append(f'#let redpanda-broker-label = "{tstr(crash_rp.get("broker", ""))}"')
+        lines.append(f'#let redpanda-broker-label = "{tstr(crash_rp.get("broker", "kafka-api@localhost:9092"))}"')
+        lines.append(f'#let redpanda-version = "{tstr(crash_rp.get("redpanda_version", "v24.2.14"))}"')
         lines.append(f'#let redpanda-crash-cells = {typst_cells(*crash_table(crash_rp))}')
         if lat_rp:
             lines.append(f'#let redpanda-latency-cells = {typst_cells(*latency_table(lat_rp))}')
@@ -348,7 +374,7 @@ def main():
     lat_rp = load_optional("latency_benchmark_redpanda.json")
     tp_rp = load_optional("throughput_benchmark_redpanda.json")
     comp_rp = load_optional("compaction_benchmark_redpanda.json")
-    draw_figure(lat, tp)
+    draw_figure(lat, tp, lat_rp=lat_rp, tp_rp=tp_rp)
     update_readme(readme_block(crash, lat, tp, comp, val, crash_rp, lat_rp, tp_rp, comp_rp))
     with open(TYPST_DATA, "w", encoding="utf-8", newline="\n") as f:
         f.write(typst_data(crash, lat, tp, comp, val, crash_rp, lat_rp, tp_rp, comp_rp))

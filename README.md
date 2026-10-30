@@ -111,11 +111,11 @@ The benchmarks are resumable: each finished run is saved to `results/_partial_*.
 
 <!-- RESULTS:START -->
 
-## Measured results
+## Measured results (disk-backed log emulator)
 
-Broker used for numbers in this section: **local-emulator**. This is the disk-backed Kafka-style log in `pipeline/broker.py`, not Redpanda. Docker was not available where these runs were made, so the Redpanda path in this repository has not been run end to end. Environment: Linux-6.8.0-138-generic-x86_64-with-glibc2.35, 13th Gen Intel(R) Core(TM) i7-13620H (2 logical CPUs), 3,915 MB RAM, Python 3.10.12, disk flags loop1=HDD, sdb=HDD, loop6=HDD, loop4=HDD, loop2=HDD, loop0=HDD, sdc=HDD, loop7=HDD, sda=HDD, loop5=HDD, loop3=HDD. Full detail in `results/ENVIRONMENT.md`.
+Broker used for numbers in this section: **local-emulator**. This is the disk-backed Kafka-style log in `pipeline/broker.py`, not Redpanda. Environment: Linux-6.8.0-138-generic-x86_64-with-glibc2.35, 13th Gen Intel(R) Core(TM) i7-13620H (2 logical CPUs), 3,915 MB RAM, Python 3.10.12, disk flags loop1=HDD, sdb=HDD, loop6=HDD, loop4=HDD, loop2=HDD, loop0=HDD, sdc=HDD, loop7=HDD, sda=HDD, loop5=HDD, loop3=HDD. Full detail in `results/ENVIRONMENT.md`.
 
-### Correctness under forced crashes
+### Correctness under forced crashes (emulator)
 
 Each run stages the topic, then hard-kills the sink 10 times at random moments (SIGKILL), restarting it each time, and finishes with an uninjected sink that drains the topic. Duplicates are rows in the lake beyond the distinct `row_id`s; missing rows are produced `row_id`s absent from the lake. Seeds: 42, 100, 2024.
 
@@ -147,7 +147,7 @@ Variants: `sigkill-only` = boundary-crash probability 0.0, batch timer 0.5 s, 30
 | outside_month | 18 | 0.001% |
 | total rejected | 94,645 | 3.19% |
 
-### Latency versus batch size
+### Latency versus batch size (emulator)
 
 The producer runs in its own process at a fixed 2,000 events/s for 70 s (30 s warm-up, then 40 s measured), below what the sink absorbs (lag stays near zero), so queueing backlog is not part of the numbers. A partition flushes at B rows or after T = 10 s, whichever comes first. B counts rows per partition (6 partitions). Batches committed during the first 30 s of production and the partial batches at the end are excluded. Sizes marked extra are not in the build spec; they show where the timer takes over. Repetitions: 3. The runs replay identical data on a fixed schedule, so the spread between repetitions is small and does not capture variation between machines or workloads.
 
@@ -161,7 +161,7 @@ The producer runs in its own process at a fixed 2,000 events/s for 70 s (30 s wa
 
 ![Latency, throughput and lag](results/figures/latency_vs_batch_tradeoff.png)
 
-### Throughput and consumer lag
+### Throughput and consumer lag (emulator)
 
 Producer and sink run in separate processes. Lag is sampled every 0.5 s as rows on the topic minus rows the sink has read; the first 30 s of each run are excluded. Reading uses the emulator's per-message index lookup, so these rates describe the emulator-backed sink and say nothing about Redpanda throughput.
 
@@ -172,7 +172,7 @@ Producer and sink run in separate processes. Lag is sampled every 0.5 s as rows 
 | 50,000 | 43,114 | 24,519 | 24,249 to 24,603 | 1,020,715 | 1,020,713 |
 | unthrottled | 42,922 | 24,654 | 24,238 to 25,093 | 1,007,711 | 1,005,212 |
 
-### Small files and compaction
+### Small files and compaction (emulator)
 
 40,000 rows written in micro-batches of 50 rows per partition. Row counts and distinct `row_id`s are checked before and after compaction and the run fails if they change. Each query is timed 5 times after a warm-up run; medians over 3 repetitions.
 
@@ -186,6 +186,56 @@ Producer and sink run in separate processes. Lag is sampled every 0.5 s as rows 
 | Query 3: top 10 zone pairs (ms) | 48.9 | 1.9 | 26.4x faster |
 | All three queries (ms) | 135.8 | 9.5 | 14.3x faster |
 | Compaction run time (s) |  | 0.69 |  |
+
+## Measured results: Redpanda broker (kafka-api@localhost:9092, v24.2.14)
+
+Broker used for numbers in this section: **kafka-api@localhost:9092** running Redpanda version **v24.2.14** in Docker Desktop with WSL2 engine. Environment: Windows-10-10.0.26300-SP0, Intel64 Family 6 Model 186 Stepping 2, GenuineIntel, Python 3.11.9. All runs communicated over the Kafka API against 6 topic partitions.
+
+### Correctness under forced crashes (Redpanda)
+
+| Configuration | Crash variant | Runs | SIGKILLs delivered | Injected crashes | Mean duplicate rows | Max duplicate rows | Mean missing rows |
+|---|---|---|---|---|---|---|---|
+| at-least-once | sigkill-only | 3 | 30 | 0 | 1,000.0 | 1,000 | 0.0 |
+| at-least-once | sigkill+boundary-crash | 3 | 30 | 0 | 333.7 | 1,000 | 5,578.7 |
+| at-least-once | sigkill+boundary-crash+timer-batches | 3 | 30 | 0 | 425.7 | 1,000 | 0.0 |
+| effectively-once | sigkill-only | 3 | 30 | 0 | 0.0 | 0 | 0.0 |
+| effectively-once | sigkill+boundary-crash | 3 | 29 | 3 | 0.0 | 0 | 0.0 |
+| effectively-once | sigkill+boundary-crash+timer-batches | 3 | 30 | 1 | 0.0 | 0 | 0.0 |
+| effectively-once-no-reconcile | sigkill-only | 3 | 30 | 0 | 0.0 | 0 | 0.0 |
+| effectively-once-no-reconcile | sigkill+boundary-crash | 3 | 30 | 3 | 0.0 | 0 | 0.0 |
+| effectively-once-no-reconcile | sigkill+boundary-crash+timer-batches | 3 | 30 | 1 | 0.0 | 0 | 1,823.3 |
+
+### Latency versus batch size (Redpanda)
+
+| B (rows per partition) | p50 ms | p95 ms | p95 min to max | p99 ms | Batches closed by size / timer |
+|---|---|---|---|---|---|
+| 250 (extra) | 333 | 1,069 | 1,066 to 1,070 | 1,602 | 556 / 0 |
+| 1,000 | 1,296 | 4,048 | 4,046 to 4,048 | 6,050 | 137 / 0 |
+| 3,000 (extra) | 3,548 | 8,581 | 8,549 to 8,584 | 9,851 | 32 / 20 |
+| 10,000 | 5,216 | 9,767 | 9,725 to 9,786 | 10,167 | 0 / 42 |
+| 50,000 | 5,198 | 9,782 | 9,715 to 9,786 | 10,190 | 0 / 42 |
+
+### Throughput and consumer lag (Redpanda)
+
+| Target ev/s | Produced ev/s | Sink read ev/s (median) | Sink min to max | Peak lag (rows) | Lag when producer stopped |
+|---|---|---|---|---|---|
+| 5,000 | 4,960 | 4,960 | 4,941 to 4,977 | 709 | 0 |
+| 20,000 | 19,654 | 19,668 | 19,655 to 19,950 | 2,077 | 0 |
+| 50,000 | 48,822 | 23,960 | 22,742 to 25,207 | 1,161,490 | 1,148,540 |
+| unthrottled | 48,518 | 23,790 | 23,688 to 23,843 | 1,271,382 | 1,265,296 |
+
+### Small files and compaction (Redpanda)
+
+| Metric | Before | After | Change |
+|---|---|---|---|
+| Rows in lake (measured) | 40,000 | 40,000 | unchanged |
+| Parquet files | 806 | 1 | 806x fewer |
+| Size on disk (MB) | 7.55 | 1.05 | 7.2x smaller |
+| Query 1: hourly trips per zone (ms) | 45.4 | 6.9 | 6.6x faster |
+| Query 2: average fare per distance bucket (ms) | 47.3 | 4.4 | 10.7x faster |
+| Query 3: top 10 zone pairs (ms) | 50.4 | 4.0 | 12.6x faster |
+| All three queries (ms) | 143.0 | 15.3 | 9.3x faster |
+| Compaction run time (s) |  | 1.12 |  |
 
 <!-- RESULTS:END -->
 
