@@ -1,0 +1,104 @@
+{
+  "broker": "kafka-api@localhost:9092",
+  "generated_at": "2026-10-30T09:26:55+00:00",
+  "environment": {
+    "os": "Windows-10-10.0.26300-SP0",
+    "python": "3.11.9",
+    "cpu": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+    "cpu_count": 16,
+    "ram_mb": null,
+    "disk": "unknown",
+    "docker": "not available in this environment",
+    "redpanda": "not run",
+    "libraries": {
+      "duckdb": "1.5.6",
+      "pyarrow": "26.0.0",
+      "confluent-kafka": "2.16.1",
+      "numpy": "2.4.6"
+    }
+  },
+  "redpanda_version": "v24.2.14",
+  "parameters": {
+    "records": 40000,
+    "micro_batch_rows_per_partition": 50,
+    "repetitions": 3,
+    "query_runs_per_timing": 5
+  },
+  "median": {
+    "files_before": 806,
+    "files_after": 1,
+    "query_ms_before": {
+      "hourly_trips_per_zone": 45.36,
+      "avg_fare_per_distance_bucket": 47.3,
+      "top_10_zone_pairs": 50.35
+    },
+    "query_ms_after": {
+      "hourly_trips_per_zone": 6.88,
+      "avg_fare_per_distance_bucket": 4.42,
+      "top_10_zone_pairs": 4.01
+    },
+    "compaction_time_sec": 1.12
+  },
+  "trials": [
+    {
+      "rows_produced": 40000,
+      "rows_before": 40000,
+      "rows_after": 40000,
+      "files_before": 806,
+      "files_after": 1,
+      "size_before_mb": 7.546,
+      "size_after_mb": 1.052,
+      "compaction_time_sec": 1.122,
+      "query_ms_before": {
+        "hourly_trips_per_zone": 45.36,
+        "avg_fare_per_distance_bucket": 47.3,
+        "top_10_zone_pairs": 51.17
+      },
+      "query_ms_after": {
+        "hourly_trips_per_zone": 5.91,
+        "avg_fare_per_distance_bucket": 3.62,
+        "top_10_zone_pairs": 3.05
+      }
+    },
+    {
+      "rows_produced": 40000,
+      "rows_before": 40000,
+      "rows_after": 40000,
+      "files_before": 806,
+      "files_after": 1,
+      "size_before_mb": 7.565,
+      "size_after_mb": 1.063,
+      "compaction_time_sec": 1.092,
+      "query_ms_before": {
+        "hourly_trips_per_zone": 45.25,
+        "avg_fare_per_distance_bucket": 47.19,
+        "top_10_zone_pairs": 48.15
+      },
+      "query_ms_after": {
+        "hourly_trips_per_zone": 9.67,
+        "avg_fare_per_distance_bucket": 4.42,
+        "top_10_zone_pairs": 4.01
+      }
+    },
+    {
+      "rows_produced": 40000,
+      "rows_before": 40000,
+      "rows_after": 40000,
+      "files_before": 806,
+      "files_after": 1,
+      "size_before_mb": 7.551,
+      "size_after_mb": 1.056,
+      "compaction_time_sec": 1.293,
+      "query_ms_before": {
+        "hourly_trips_per_zone": 47.92,
+        "avg_fare_per_distance_bucket": 49.03,
+        "top_10_zone_pairs": 50.35
+      },
+      "query_ms_after": {
+        "hourly_trips_per_zone": 6.88,
+        "avg_fare_per_distance_bucket": 4.79,
+        "top_10_zone_pairs": 4.84
+      }
+    }
+  ]
+}
