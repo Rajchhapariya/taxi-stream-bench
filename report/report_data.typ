@@ -227,6 +227,9 @@
 #let has-redpanda = true
 #let redpanda-broker-label = "kafka-api@localhost:9092"
 #let redpanda-version = "v24.2.14"
+#let redpanda-mode-a-dups = "666.7"
+#let redpanda-mode-b-dups = "0.0"
+#let redpanda-compaction-speedup = "9.3x"
 #let redpanda-crash-cells = (
   [*Configuration*],
   [*Crash variant*],

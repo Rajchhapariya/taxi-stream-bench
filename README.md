@@ -276,4 +276,4 @@ Keying by `PULocationID` sends busy zones (airports, Midtown) to the same partit
 
 ## 7. CV Line
 
-Built an offset-keyed idempotent Parquet lake sink for a 2,964,624-record NYC Yellow Taxi stream and benchmarked it against both a local log emulator and a live Redpanda cluster (6 partitions) with hard kills and injected crashes: produced 0.0 duplicate rows against a mean of 1,000.0 duplicates under at-least-once delivery, achieving 9.3x analytical query speedup after Parquet compaction and sub-second p95 latency under small batch sizes.
+Built an offset-keyed idempotent Parquet lake sink for a 2,964,624-record NYC Yellow Taxi stream and benchmarked it against both a local log emulator and a live Redpanda cluster (6 partitions) with hard kills and injected crashes: produced 0.0 duplicate rows against a mean of 666.7 duplicates under at-least-once delivery, achieving 9.3x analytical query speedup after Parquet compaction and sub-second p95 latency under small batch sizes.

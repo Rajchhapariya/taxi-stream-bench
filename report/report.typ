@@ -160,13 +160,17 @@ Kafka-style brokers cannot coordinate a two-phase commit with a file sink. When 
 
 #v(0.04cm)
 
+#let display-mode-a-dups = if has-redpanda { redpanda-mode-a-dups } else { mode-a-dups }
+#let display-compaction-speedup = if has-redpanda { redpanda-compaction-speedup } else { compaction-speedup }
+#let display-dups-subtext = if has-redpanda [mean rows, Redpanda boundary-crash] else [mean rows, boundary-crash variant]
+
 #grid(
   columns: (1fr, 1fr, 1fr, 1fr),
   gutter: 8pt,
   stat-card("Source rows", total-records, "NYC TLC, January 2024", color: rgb("#0284c7")),
   stat-card("Accepted rows", accepted-records, pass-rate + " pass validation", color: rgb("#10b981")),
-  stat-card("Duplicates, Mode A vs B", mode-a-dups + " vs " + mode-b-dups, "mean rows per run, boundary-crash variant", color: rgb("#8b5cf6")),
-  stat-card("Compaction", compaction-speedup, "faster for the three queries", color: rgb("#f59e0b"))
+  stat-card("Duplicates, Mode A vs B", display-mode-a-dups + " vs " + mode-b-dups, display-dups-subtext, color: rgb("#8b5cf6")),
+  stat-card("Compaction", display-compaction-speedup, "faster for the three queries", color: rgb("#f59e0b"))
 )
 
 #v(0.04cm)
@@ -356,7 +360,7 @@ The producer checks each row against four rules before publishing. Of #total-rec
   #set text(size: 8pt, fill: rgb("#1e293b"))
   *Resume line (numbers from the tables above):*
   #if has-redpanda [
-    "Built an offset-keyed idempotent Parquet sink for a Kafka-style stream of #total-records NYC taxi trips and benchmarked it against both a local emulator and a live Redpanda cluster (6 partitions) with hard kills and injected crashes: it produced #mode-b-dups duplicate rows against a mean of #mode-a-dups under at-least-once delivery, and sustained up to 23,800 events/s with sub-second p95 latency under small batch configurations."
+    "Built an offset-keyed idempotent Parquet sink for a Kafka-style stream of #total-records NYC taxi trips and benchmarked it against both a local emulator and a live Redpanda cluster (6 partitions) with hard kills and injected crashes: it produced #mode-b-dups duplicate rows against a mean of #redpanda-mode-a-dups under at-least-once delivery, and sustained up to 23,800 events/s with sub-second p95 latency under small batch configurations."
   ] else [
     "Built an offset-keyed idempotent Parquet sink for a Kafka-style stream of #total-records NYC taxi trips and tested it against a disk-backed broker emulator with hard kills and injected crashes: it produced #mode-b-dups duplicate rows against a mean of #mode-a-dups under at-least-once delivery, and a short-timer variant showed that a sink without orphan-file cleanup leaks #noreconcile-dups rows per run. Redpanda path implemented, not yet run."
   ]

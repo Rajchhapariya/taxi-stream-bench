@@ -331,9 +331,21 @@ def typst_data(crash, lat, tp, comp, val,
         f'#let compaction-cells = {typst_cells(*compaction_table(comp))}',
     ]
     if crash_rp:
+        s_rp = crash_rp.get("summary", {})
+        a_rp = s_rp.get(f"at-least-once | {var}", {})
+        b_rp = s_rp.get(f"effectively-once | {var}", {})
+        rp_mode_a_dups = n1(a_rp.get("mean_duplicate_rows", 0.0))
+        rp_mode_b_dups = n1(b_rp.get("mean_duplicate_rows", 0.0))
         lines.append('#let has-redpanda = true')
         lines.append(f'#let redpanda-broker-label = "{tstr(crash_rp.get("broker", "kafka-api@localhost:9092"))}"')
         lines.append(f'#let redpanda-version = "{tstr(crash_rp.get("redpanda_version", "v24.2.14"))}"')
+        lines.append(f'#let redpanda-mode-a-dups = "{rp_mode_a_dups}"')
+        lines.append(f'#let redpanda-mode-b-dups = "{rp_mode_b_dups}"')
+        if comp_rp:
+            mc_rp = comp_rp["median"]
+            tb_rp = sum(mc_rp["query_ms_before"].values())
+            ta_rp = sum(mc_rp["query_ms_after"].values())
+            lines.append(f'#let redpanda-compaction-speedup = "{tb_rp / ta_rp:.1f}x"')
         lines.append(f'#let redpanda-crash-cells = {typst_cells(*crash_table(crash_rp))}')
         if lat_rp:
             lines.append(f'#let redpanda-latency-cells = {typst_cells(*latency_table(lat_rp))}')
