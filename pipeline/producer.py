@@ -49,6 +49,7 @@ def run_producer(
     save_stats: Optional[str] = DEFAULT_STATS_PATH,
     force_local: bool = False,
     require_kafka: bool = False,
+    return_row_ids: bool = False,
 ) -> Dict[str, Any]:
     if not os.path.exists(source_path):
         raise FileNotFoundError(f"Source parquet not found: {source_path}")
@@ -61,6 +62,7 @@ def run_producer(
 
     row_index = 0
     produced_count = 0
+    produced_ids: List[int] = []
     start_time = time.perf_counter()
     last_rate_check_time = start_time
     last_produced_checkpoint = 0
@@ -113,6 +115,8 @@ def run_producer(
 
             producer.produce(topic=topic, key=key_bytes, value=val_bytes)
             produced_count += 1
+            if return_row_ids:
+                produced_ids.append(current_row_id)
 
             if target_rate and target_rate > 0:
                 if produced_count % 500 == 0:
@@ -152,6 +156,8 @@ def run_producer(
         "elapsed_seconds": round(total_time, 3),
         "avg_events_per_second": round(avg_rate, 1),
     }
+    if return_row_ids:
+        summary["produced_row_ids"] = set(produced_ids)
 
     print("\n--- Producer Summary ---")
     print(f"Scanned:  {summary['total_source_rows_scanned']:,} rows")

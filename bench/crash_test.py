@@ -33,10 +33,17 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
-from bench.common import (BASE_DIR, DATA_PATH, TrialBudget, clear_partial, lake_row_ids, lake_stats,
-                          load_partial, produced_row_ids, save_partial, write_result)
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from bench.common import (BASE_DIR, DATA_PATH, TrialBudget, clear_partial, hard_kill_process,
+                          lake_row_ids, lake_stats, load_partial, produced_row_ids,
+                          result_filename, save_partial, write_result)
+from pipeline.broker import BrokerUnavailableError, create_kafka_topic, delete_kafka_topic, kafka_usable
 from pipeline.producer import run_producer
 
 CONFIGS: List[Tuple[str, str, bool]] = [
@@ -54,105 +61,123 @@ TOPIC = "trips_crash"
 
 
 def run_single_crash_experiment(config: Tuple[str, str, bool], variant: Tuple[str, float, float, int], seed: int,
-                                batch_size: int, num_kills: int) -> Dict[str, Any]:
+                                batch_size: int, num_kills: int, broker: str = "local",
+                                bootstrap_servers: str = "localhost:9092") -> Dict[str, Any]:
     cfg_name, mode, reconcile = config
     var_name, crash_prob, batch_timeout, num_records = variant
     tag = f"{cfg_name}_{var_name}_s{seed}".replace("+", "-")
-    print(f"\n--- {cfg_name} | {var_name} | seed {seed} | {num_kills} kills ---", flush=True)
+    print(f"\n--- {cfg_name} | {var_name} | seed {seed} | {num_kills} kills [{broker}] ---", flush=True)
 
-    rng = random.Random(seed)
-    lake_dir = os.path.join(BASE_DIR, "lake_crash", tag)
-    broker_dir = os.path.join(BASE_DIR, "lake_crash", tag + "_broker")
-    state_db = os.path.join(lake_dir, "sink_state.duckdb")
-    for d in (lake_dir, broker_dir):
-        shutil.rmtree(d, ignore_errors=True)
-        os.makedirs(d, exist_ok=True)
+    if broker == "kafka":
+        if not kafka_usable(bootstrap_servers):
+            raise BrokerUnavailableError(f"Broker unavailable at {bootstrap_servers} for kafka-mode crash test")
+        clean_tag = tag.replace("-", "_").replace(".", "_")
+        trial_topic = f"trips_crash_{clean_tag}_{uuid.uuid4().hex[:6]}"
+        create_kafka_topic(trial_topic, bootstrap_servers, num_partitions=6)
+    else:
+        trial_topic = TOPIC
 
-    os.environ["LOCAL_BROKER_DIR"] = broker_dir
-    env = os.environ.copy()
-    env["PYTHONPATH"] = BASE_DIR
-    env["LOCAL_BROKER_DIR"] = broker_dir
+    try:
+        rng = random.Random(seed)
+        lake_dir = os.path.join(BASE_DIR, "lake_crash", f"{tag}_{broker}")
+        broker_dir = os.path.join(BASE_DIR, "lake_crash", f"{tag}_{broker}_broker")
+        state_db = os.path.join(lake_dir, "sink_state.duckdb")
+        for d in (lake_dir, broker_dir):
+            shutil.rmtree(d, ignore_errors=True)
+            os.makedirs(d, exist_ok=True)
 
-    prod = run_producer(source_path=DATA_PATH, topic=TOPIC, max_records=num_records,
-                        force_local=True, save_stats=None)
-    produced_ids = produced_row_ids(broker_dir, TOPIC)
+        os.environ["LOCAL_BROKER_DIR"] = broker_dir
+        env = os.environ.copy()
+        env["PYTHONPATH"] = BASE_DIR
+        env["LOCAL_BROKER_DIR"] = broker_dir
 
-    launches = {"n": 0}
+        prod = run_producer(source_path=DATA_PATH, topic=trial_topic, max_records=num_records,
+                            force_local=(broker == "local"), require_kafka=(broker == "kafka"),
+                            bootstrap_servers=bootstrap_servers, return_row_ids=True, save_stats=None)
+        produced_ids = prod.get("produced_row_ids")
+        if produced_ids is None:
+            produced_ids = produced_row_ids(broker_dir, trial_topic)
 
-    def launch(prob: float) -> subprocess.Popen:
-        launches["n"] += 1
-        cmd = [
-            sys.executable, "-u", "-m", "pipeline.sink", "--mode", mode,
-            "--lake-dir", lake_dir, "--state-db", state_db,
-            "-B", str(batch_size), "-T", str(batch_timeout), "--topic", TOPIC, "--force-local",
-            "--crash-prob", str(prob), "--crash-seed", str(seed * 1000 + launches["n"]),
-        ]
-        if not reconcile:
-            cmd.append("--no-reconcile")
-        return subprocess.Popen(cmd, cwd=BASE_DIR, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        launches = {"n": 0}
 
-    proc = launch(crash_prob)
-    kills_delivered = 0
-    exits_before_kill = 0
-    injected_exits = 0
+        def launch(prob: float) -> subprocess.Popen:
+            launches["n"] += 1
+            cmd = [
+                sys.executable, "-u", "-m", "pipeline.sink", "--mode", mode,
+                "--lake-dir", lake_dir, "--state-db", state_db,
+                "-B", str(batch_size), "-T", str(batch_timeout), "--topic", trial_topic,
+                "--crash-prob", str(prob), "--crash-seed", str(seed * 1000 + launches["n"]),
+            ]
+            if broker == "kafka":
+                cmd.extend(["--require-kafka", "--bootstrap-servers", bootstrap_servers])
+            else:
+                cmd.append("--force-local")
+            if not reconcile:
+                cmd.append("--no-reconcile")
+            return subprocess.Popen(cmd, cwd=BASE_DIR, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    for _ in range(num_kills):
-        deadline = time.time() + rng.uniform(0.3, 1.2)
-        while time.time() < deadline:
-            if proc.poll() is not None:
-                # the sink ended by itself (injected crash, or it drained the topic): restart it
+        proc = launch(crash_prob)
+        kills_delivered = 0
+        exits_before_kill = 0
+        injected_exits = 0
+
+        for _ in range(num_kills):
+            deadline = time.time() + rng.uniform(0.3, 1.2)
+            while time.time() < deadline:
+                if proc.poll() is not None:
+                    # the sink ended by itself (injected crash, or it drained the topic): restart it
+                    exits_before_kill += 1
+                    if proc.returncode in (42, 43, 44):
+                        injected_exits += 1
+                    proc = launch(crash_prob)
+                time.sleep(0.01)
+            if proc.poll() is None:
+                hard_kill_process(proc)
+                kills_delivered += 1
+            else:
                 exits_before_kill += 1
                 if proc.returncode in (42, 43, 44):
                     injected_exits += 1
-                proc = launch(crash_prob)
-            time.sleep(0.01)
-        if proc.poll() is None:
-            proc.kill()
-            proc.wait(timeout=5)
-            kills_delivered += 1
-        else:
-            exits_before_kill += 1
-            if proc.returncode in (42, 43, 44):
-                injected_exits += 1
-        proc = launch(crash_prob)
+            proc = launch(crash_prob)
 
-    # Final run: no injection, runs until the topic is drained and the sink exits on its own.
-    proc.kill()
-    proc.wait(timeout=5)
-    final = launch(0.0)
-    try:
-        final.wait(timeout=240)
-        drain_completed = final.returncode == 0
-    except subprocess.TimeoutExpired:
-        final.kill()
-        final.wait(timeout=5)
-        drain_completed = False
+        # Final run: no injection, runs until the topic is drained and the sink exits on its own.
+        hard_kill_process(proc)
+        final = launch(0.0)
+        try:
+            final.wait(timeout=240)
+            drain_completed = final.returncode == 0
+        except subprocess.TimeoutExpired:
+            hard_kill_process(final)
+            drain_completed = False
 
-    stats = lake_stats(lake_dir)
-    lake_ids = lake_row_ids(lake_dir)
-    result = {
-        "config": cfg_name,
-        "variant": var_name,
-        "seed": seed,
-        "kills_requested": num_kills,
-        "kills_delivered": kills_delivered,
-        "exits_before_kill": exits_before_kill,
-        "injected_exits": injected_exits,
-        "sink_launches": launches["n"],
-        "drain_completed": drain_completed,
-        "total_produced": prod["accepted_and_produced"],
-        "distinct_produced_ids": len(produced_ids),
-        "total_in_lake": stats["rows"],
-        "unique_in_lake": stats["unique_row_ids"],
-        "duplicate_rows": stats["rows"] - stats["unique_row_ids"],
-        "missing_rows": len(produced_ids - lake_ids),
-        "unexpected_rows": len(lake_ids - produced_ids),
-        "file_count": stats["files"],
-    }
-    print(f"  lake={result['total_in_lake']:,} dup={result['duplicate_rows']:,} "
-          f"missing={result['missing_rows']:,} kills={kills_delivered} injected={injected_exits} "
-          f"drained={drain_completed}", flush=True)
-    return result
+        stats = lake_stats(lake_dir)
+        lake_ids = lake_row_ids(lake_dir)
+        result = {
+            "config": cfg_name,
+            "variant": var_name,
+            "seed": seed,
+            "kills_requested": num_kills,
+            "kills_delivered": kills_delivered,
+            "exits_before_kill": exits_before_kill,
+            "injected_exits": injected_exits,
+            "sink_launches": launches["n"],
+            "drain_completed": drain_completed,
+            "total_produced": prod["accepted_and_produced"],
+            "distinct_produced_ids": len(produced_ids),
+            "total_in_lake": stats["rows"],
+            "unique_in_lake": stats["unique_row_ids"],
+            "duplicate_rows": stats["rows"] - stats["unique_row_ids"],
+            "missing_rows": len(produced_ids - lake_ids),
+            "unexpected_rows": len(lake_ids - produced_ids),
+            "file_count": stats["files"],
+        }
+        print(f"  lake={result['total_in_lake']:,} dup={result['duplicate_rows']:,} "
+              f"missing={result['missing_rows']:,} kills={kills_delivered} injected={injected_exits} "
+              f"drained={drain_completed}", flush=True)
+        return result
+    finally:
+        if broker == "kafka":
+            delete_kafka_topic(trial_topic, bootstrap_servers)
 
 
 def summarise(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -176,8 +201,10 @@ def summarise(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def run_full_crash_suite(seeds: List[int], num_kills: int, batch_size: int,
-                         max_new: Optional[int] = None) -> Optional[Dict[str, Any]]:
-    partial = load_partial("crash")
+                         max_new: Optional[int] = None, broker: str = "local",
+                         bootstrap_servers: str = "localhost:9092") -> Optional[Dict[str, Any]]:
+    partial_key = f"crash_{broker}" if broker != "local" else "crash"
+    partial = load_partial(partial_key)
     runs: List[Dict[str, Any]] = partial.get("runs", [])
     done = {(r["config"], r["variant"], r["seed"]) for r in runs}
     budget = TrialBudget(max_new)
@@ -189,9 +216,11 @@ def run_full_crash_suite(seeds: List[int], num_kills: int, batch_size: int,
                 if not budget.take():
                     print(f"\nStopped after budget; {len(runs)} runs saved. Run again to continue.")
                     return None
-                runs.append(run_single_crash_experiment(config, variant, seed, batch_size, num_kills))
-                save_partial("crash", {"runs": runs})
-    doc = write_result("crash_benchmark.json", {
+                runs.append(run_single_crash_experiment(config, variant, seed, batch_size, num_kills,
+                                                        broker=broker, bootstrap_servers=bootstrap_servers))
+                save_partial(partial_key, {"runs": runs})
+    out_name = result_filename("crash_benchmark.json", broker=broker)
+    doc = write_result(out_name, {
         "parameters": {
             "seeds": seeds, "kills_per_run": num_kills,
             "batch_size": batch_size, "commit_delay_s": 0.02,
@@ -199,23 +228,30 @@ def run_full_crash_suite(seeds: List[int], num_kills: int, batch_size: int,
         },
         "summary": summarise(runs),
         "runs": runs,
-    }, force_local=True)
-    clear_partial("crash")
-    print("\nSaved results/crash_benchmark.json")
+    }, force_local=(broker == "local"), require_kafka=(broker == "kafka"),
+       bootstrap_servers=bootstrap_servers, broker=broker)
+    clear_partial(partial_key)
+    print(f"\nSaved results/{out_name}")
     return doc
 
 
 def main():
     parser = argparse.ArgumentParser(description="Crash injection benchmark.")
+    parser.add_argument("--broker", type=str, choices=["local", "kafka"], default="local",
+                        help="Broker engine ('local' for disk emulator, 'kafka' for Redpanda/Kafka)")
+    parser.add_argument("--bootstrap-servers", type=str, default="localhost:9092",
+                        help="Kafka bootstrap servers")
     parser.add_argument("--seeds", type=int, nargs="+", default=[42, 100, 2024])
     parser.add_argument("--kills", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=1000)
     parser.add_argument("--max-new", type=int, default=None, help="Stop after N new runs; rerun to resume")
     parser.add_argument("--fresh", action="store_true", help="Discard saved partial runs")
     args = parser.parse_args()
+    partial_key = f"crash_{args.broker}" if args.broker != "local" else "crash"
     if args.fresh:
-        clear_partial("crash")
-    run_full_crash_suite(args.seeds, args.kills, args.batch_size, args.max_new)
+        clear_partial(partial_key)
+    run_full_crash_suite(args.seeds, args.kills, args.batch_size, args.max_new,
+                         broker=args.broker, bootstrap_servers=args.bootstrap_servers)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,11 @@ import os
 import shutil
 import statistics
 import subprocess
+import sys
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 import matplotlib
 
@@ -26,6 +31,14 @@ TYPST_DATA = os.path.join(BASE_DIR, "report", "report_data.typ")
 def load(name):
     with open(os.path.join(RESULTS_DIR, name), encoding="utf-8") as f:
         return json.load(f)
+
+
+def load_optional(name):
+    path = os.path.join(RESULTS_DIR, name)
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    return None
 
 
 def n0(x):
@@ -171,12 +184,15 @@ def draw_figure(lat, tp):
 
 # ---- README block ------------------------------------------------------------------------------
 
-def readme_block(crash, lat, tp, comp, val):
+def readme_block(crash, lat, tp, comp, val,
+                 crash_rp=None, lat_rp=None, tp_rp=None, comp_rp=None):
     env = crash["environment"]
     p = crash["parameters"]["variants"]
     out = []
-    out.append("## Measured results\n")
-    out.append(f"Broker used for every number below: **{crash['broker']}**. This is the disk-backed Kafka-style log in "
+    has_rp = crash_rp is not None
+    section_title = "## Measured results: disk-backed log emulator" if has_rp else "## Measured results"
+    out.append(f"{section_title}\n")
+    out.append(f"Broker used for numbers in this section: **{crash['broker']}**. This is the disk-backed Kafka-style log in "
                "`pipeline/broker.py`, not Redpanda. Docker was not available where these runs were made, so the "
                "Redpanda path in this repository has not been run end to end. "
                f"Environment: {env['os']}, {env['cpu']} ({env['cpu_count']} logical CPUs), {env['ram_mb']:,} MB RAM, "
@@ -220,6 +236,25 @@ def readme_block(crash, lat, tp, comp, val):
                f"`row_id`s are checked before and after compaction and the run fails if they change. Each query is timed {cp['query_runs_per_timing']} times "
                f"after a warm-up run; medians over {cp['repetitions']} repetitions.\n")
     out.append(md_table(*compaction_table(comp)) + "\n")
+
+    if crash_rp:
+        rp_broker = crash_rp.get("broker", "kafka-api@localhost:9092")
+        rp_ver = crash_rp.get("redpanda_version")
+        ver_str = f" (Redpanda version {rp_ver})" if rp_ver else ""
+        out.append(f"## Measured results: Redpanda broker ({rp_broker}{ver_str})\n")
+        out.append("These benchmarks ran against a live Redpanda container via the Kafka API with 6 topic partitions.\n")
+        out.append("### Correctness under forced crashes (Redpanda)\n")
+        out.append(md_table(*crash_table(crash_rp)) + "\n")
+        if lat_rp:
+            out.append("### Latency versus batch size (Redpanda)\n")
+            out.append(md_table(*latency_table(lat_rp)) + "\n")
+        if tp_rp:
+            out.append("### Throughput and consumer lag (Redpanda)\n")
+            out.append(md_table(*throughput_table(tp_rp)) + "\n")
+        if comp_rp:
+            out.append("### Small files and compaction (Redpanda)\n")
+            out.append(md_table(*compaction_table(comp_rp)) + "\n")
+
     return "\n".join(out)
 
 
@@ -231,7 +266,8 @@ def typst_cells(header, rows):
     return "(\n  " + ",\n  ".join(cells) + ",\n)"
 
 
-def typst_data(crash, lat, tp, comp, val):
+def typst_data(crash, lat, tp, comp, val,
+               crash_rp=None, lat_rp=None, tp_rp=None, comp_rp=None):
     env = crash["environment"]
     s = crash["summary"]
     var = "sigkill+boundary-crash"
@@ -266,6 +302,18 @@ def typst_data(crash, lat, tp, comp, val):
         f'#let throughput-cells = {typst_cells(*throughput_table(tp))}',
         f'#let compaction-cells = {typst_cells(*compaction_table(comp))}',
     ]
+    if crash_rp:
+        lines.append('#let has-redpanda = true')
+        lines.append(f'#let redpanda-broker-label = "{tstr(crash_rp.get("broker", ""))}"')
+        lines.append(f'#let redpanda-crash-cells = {typst_cells(*crash_table(crash_rp))}')
+        if lat_rp:
+            lines.append(f'#let redpanda-latency-cells = {typst_cells(*latency_table(lat_rp))}')
+        if tp_rp:
+            lines.append(f'#let redpanda-throughput-cells = {typst_cells(*throughput_table(tp_rp))}')
+        if comp_rp:
+            lines.append(f'#let redpanda-compaction-cells = {typst_cells(*compaction_table(comp_rp))}')
+    else:
+        lines.append('#let has-redpanda = false')
     return "\n".join(lines) + "\n"
 
 
@@ -296,10 +344,14 @@ def compile_report():
 def main():
     crash, lat, tp = load("crash_benchmark.json"), load("latency_benchmark.json"), load("throughput_benchmark.json")
     comp, val = load("compaction_benchmark.json"), load("full_dataset_validation.json")
+    crash_rp = load_optional("crash_benchmark_redpanda.json")
+    lat_rp = load_optional("latency_benchmark_redpanda.json")
+    tp_rp = load_optional("throughput_benchmark_redpanda.json")
+    comp_rp = load_optional("compaction_benchmark_redpanda.json")
     draw_figure(lat, tp)
-    update_readme(readme_block(crash, lat, tp, comp, val))
+    update_readme(readme_block(crash, lat, tp, comp, val, crash_rp, lat_rp, tp_rp, comp_rp))
     with open(TYPST_DATA, "w", encoding="utf-8", newline="\n") as f:
-        f.write(typst_data(crash, lat, tp, comp, val))
+        f.write(typst_data(crash, lat, tp, comp, val, crash_rp, lat_rp, tp_rp, comp_rp))
     print("Updated figure, README results block and report/report_data.typ")
     compile_report()
 

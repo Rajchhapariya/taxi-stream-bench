@@ -13,9 +13,15 @@ import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
 import duckdb
 
-from pipeline.broker import LocalBrokerEngine, broker_label
+from pipeline.broker import (LocalBrokerEngine, broker_label, create_kafka_topic,
+                             delete_kafka_topic, get_default_local_state_dir,
+                             get_redpanda_version, get_topic_watermark_sum, kafka_usable)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_PATH = os.path.join(BASE_DIR, "data", "yellow_tripdata_2024-01.parquet")
@@ -82,18 +88,50 @@ def environment_info() -> Dict[str, Any]:
     }
 
 
+def result_filename(base_name: str, broker: str = "local") -> str:
+    """Returns the output JSON file name distinguished by broker (e.g. *_redpanda.json)."""
+    if broker == "kafka":
+        return base_name.replace(".json", "_redpanda.json")
+    return base_name
+
+
 def write_result(name: str, payload: Dict[str, Any], force_local: bool = True,
-                 bootstrap_servers: str = "localhost:9092", require_kafka: bool = False) -> Dict[str, Any]:
+                 bootstrap_servers: str = "localhost:9092", require_kafka: bool = False,
+                 broker: str = "local") -> Dict[str, Any]:
     os.makedirs(RESULTS_DIR, exist_ok=True)
+    is_kafka = (broker == "kafka") or (not force_local and kafka_usable(bootstrap_servers))
+    real_force_local = not is_kafka
     doc = {
-        "broker": broker_label(bootstrap_servers, force_local, require_kafka),
+        "broker": broker_label(bootstrap_servers, force_local=real_force_local, require_kafka=require_kafka),
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "environment": environment_info(),
     }
+    redpanda_ver = get_redpanda_version()
+    if redpanda_ver:
+        doc["redpanda_version"] = redpanda_ver
     doc.update(payload)
-    with open(os.path.join(RESULTS_DIR, name), "w", encoding="utf-8") as f:
+    out_path = os.path.join(RESULTS_DIR, name)
+    with open(out_path, "w", encoding="utf-8") as f:
         json.dump(doc, f, indent=2)
     return doc
+
+
+def hard_kill_process(proc: subprocess.Popen) -> None:
+    """Forcefully terminates a subprocess without graceful shutdown."""
+    if proc.poll() is not None:
+        return
+    if sys.platform == "win32":
+        try:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        except Exception:
+            proc.kill()
+    else:
+        proc.kill()
+    try:
+        proc.wait(timeout=2.0)
+    except subprocess.TimeoutExpired:
+        pass
 
 
 def lake_stats(lake_dir: str) -> Dict[str, Any]:
@@ -145,18 +183,36 @@ def topic_end_total(broker_dir: str, topic: str, partitions: int = 6) -> int:
     return total
 
 
-def start_producer_process(topic: str, broker_dir: str, rate: Optional[float], max_records: int,
-                           stats_out: str) -> subprocess.Popen:
+def topic_end_total_agnostic(topic: str, broker: str = "local", broker_dir: Optional[str] = None,
+                             bootstrap_servers: str = "localhost:9092", partitions: int = 6,
+                             consumer: Optional[Any] = None) -> int:
+    """Returns the total number of records across all partitions for either broker."""
+    if broker == "kafka":
+        return get_topic_watermark_sum(topic, bootstrap_servers=bootstrap_servers,
+                                       num_partitions=partitions, consumer=consumer)
+    else:
+        bdir = broker_dir or get_default_local_state_dir()
+        return topic_end_total(bdir, topic, partitions=partitions)
+
+
+def start_producer_process(topic: str, broker_dir: Optional[str] = None, rate: Optional[float] = None,
+                           max_records: int = 0, stats_out: str = "", broker: str = "local",
+                           bootstrap_servers: str = "localhost:9092") -> subprocess.Popen:
     cmd = [
         sys.executable, "-u", "-m", "pipeline.producer",
         "--topic", topic, "--max-records", str(max_records),
-        "--force-local", "--stats-out", stats_out,
+        "--stats-out", stats_out,
     ]
+    if broker == "kafka":
+        cmd += ["--bootstrap-servers", bootstrap_servers, "--require-kafka"]
+    else:
+        cmd += ["--force-local"]
     if rate:
         cmd += ["--rate", str(rate)]
     env = os.environ.copy()
     env["PYTHONPATH"] = BASE_DIR
-    env["LOCAL_BROKER_DIR"] = broker_dir
+    if broker_dir and broker == "local":
+        env["LOCAL_BROKER_DIR"] = broker_dir
     return subprocess.Popen(cmd, cwd=BASE_DIR, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 

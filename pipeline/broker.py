@@ -17,6 +17,7 @@ try:
     from confluent_kafka import Consumer as ConfluentConsumer
     from confluent_kafka import Producer as ConfluentProducer
     from confluent_kafka import KafkaError, TopicPartition
+    from confluent_kafka.admin import AdminClient, NewTopic
     CONFLUENT_AVAILABLE = True
 except ImportError:
     CONFLUENT_AVAILABLE = False
@@ -24,6 +25,8 @@ except ImportError:
     ConfluentConsumer = None
     KafkaError = None
     TopicPartition = None
+    AdminClient = None
+    NewTopic = None
 
 
 def is_broker_accessible(host: str = "localhost", port: int = 9092, timeout: float = 0.5) -> bool:
@@ -348,6 +351,12 @@ class LocalConsumer:
         off = partition.offset
         self.current_offsets[p] = off
 
+    def get_watermark_offsets(self, partition: Any, timeout: float = 2.0, cached: bool = False) -> Tuple[int, int]:
+        p = partition.partition if hasattr(partition, "partition") else int(partition)
+        topic = partition.topic if hasattr(partition, "topic") else self.subscribed_topics[0]
+        high = self.engine.peek_end_offset(topic, p)
+        return (0, high)
+
     def close(self):
         self.engine.close()
 
@@ -400,8 +409,84 @@ class KafkaConsumerAdapter:
         else:
             self._c.commit(offsets=offsets, asynchronous=False)
 
+    def get_watermark_offsets(self, partition: Any, timeout: float = 2.0, cached: bool = False) -> Tuple[int, int]:
+        return self._c.get_watermark_offsets(partition, timeout=timeout, cached=cached)
+
     def close(self):
         self._c.close()
+
+
+def create_kafka_topic(topic: str, bootstrap_servers: str = "localhost:9092",
+                       num_partitions: int = 6, replication_factor: int = 1,
+                       timeout: float = 10.0) -> None:
+    """Creates a topic with the specified partition count. Fails loudly if unreachable."""
+    if not CONFLUENT_AVAILABLE or AdminClient is None:
+        raise BrokerUnavailableError("confluent-kafka AdminClient is not available.")
+    admin = AdminClient({"bootstrap.servers": bootstrap_servers})
+    new_topic = NewTopic(topic, num_partitions=num_partitions, replication_factor=replication_factor)
+    futures = admin.create_topics([new_topic], request_timeout=timeout)
+    for t, future in futures.items():
+        try:
+            future.result(timeout=timeout)
+        except Exception as e:
+            err_str = str(e).lower()
+            if "already exists" not in err_str and "topic_already_exists" not in err_str:
+                raise
+
+
+def delete_kafka_topic(topic: str, bootstrap_servers: str = "localhost:9092",
+                       timeout: float = 10.0) -> None:
+    """Deletes a Kafka topic if it exists."""
+    if not CONFLUENT_AVAILABLE or AdminClient is None:
+        return
+    admin = AdminClient({"bootstrap.servers": bootstrap_servers})
+    futures = admin.delete_topics([topic], request_timeout=timeout)
+    for t, future in futures.items():
+        try:
+            future.result(timeout=timeout)
+        except Exception:
+            pass
+
+
+def get_redpanda_version(admin_url: str = "http://localhost:9644") -> Optional[str]:
+    """Queries Redpanda Admin HTTP endpoint if available."""
+    try:
+        import urllib.request
+        with urllib.request.urlopen(f"{admin_url}/v1/node_config", timeout=1.0) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data.get("version")
+    except Exception:
+        return None
+
+
+def get_topic_watermark_sum(topic: str, bootstrap_servers: str = "localhost:9092",
+                            num_partitions: int = 6, consumer: Optional[Any] = None) -> int:
+    """Queries broker for the sum of high watermark offsets across all partitions."""
+    close_when_done = False
+    if consumer is None:
+        if not CONFLUENT_AVAILABLE:
+            return 0
+        conf = {
+            "bootstrap.servers": bootstrap_servers,
+            "group.id": f"wm-query-{os.getpid()}-{int(time.time()*1000)}",
+            "enable.auto.commit": False,
+        }
+        consumer = ConfluentConsumer(conf)
+        close_when_done = True
+    try:
+        total = 0
+        for p in range(num_partitions):
+            tp = TopicPartition(topic, p)
+            res = consumer.get_watermark_offsets(tp, timeout=2.0)
+            if res is not None:
+                total += res[1]
+        return total
+    finally:
+        if close_when_done:
+            try:
+                consumer.close()
+            except Exception:
+                pass
 
 
 def get_default_local_state_dir() -> str:

@@ -27,6 +27,10 @@ class FakeConfluentConsumer:
     def commit(self, message=None, offsets=None, asynchronous=True):
         self.calls.append(("commit", message, offsets, asynchronous))
 
+    def get_watermark_offsets(self, tp, timeout=None, cached=False):
+        self.calls.append(("get_watermark_offsets", tp.topic, tp.partition))
+        return (0, 1234)
+
     def close(self):
         self.calls.append(("close",))
 
@@ -81,3 +85,22 @@ def test_require_kafka_refuses_to_fall_back(monkeypatch):
     with pytest.raises(BrokerUnavailableError):
         create_producer(require_kafka=True)
     assert "fallback" in broker_label("localhost:9092")
+
+
+def test_consumer_adapter_delegates_get_watermark_offsets():
+    fake = FakeConfluentConsumer()
+    adapter = KafkaConsumerAdapter(fake, num_partitions=6)
+    tp = EmulatedTopicPartition("trips", 3)
+    offsets = adapter.get_watermark_offsets(tp)
+    assert offsets == (0, 1234)
+    assert ("get_watermark_offsets", "trips", 3) in fake.calls
+
+
+def test_local_consumer_get_watermark_offsets(tmp_path):
+    engine = broker.LocalBrokerEngine(state_dir=str(tmp_path), num_partitions=6)
+    consumer = broker.LocalConsumer(engine, group_id="test-grp", num_partitions=6)
+    consumer.subscribe(["trips"])
+    tp = EmulatedTopicPartition("trips", 0)
+    offsets = consumer.get_watermark_offsets(tp)
+    assert offsets == (0, 0)
+    consumer.close()

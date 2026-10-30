@@ -224,3 +224,4 @@
   [0.69],
   [],
 )
+#let has-redpanda = false

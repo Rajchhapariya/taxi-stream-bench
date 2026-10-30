@@ -113,7 +113,7 @@ The benchmarks are resumable: each finished run is saved to `results/_partial_*.
 
 ## Measured results
 
-Broker used for every number below: **local-emulator**. This is the disk-backed Kafka-style log in `pipeline/broker.py`, not Redpanda. Docker was not available where these runs were made, so the Redpanda path in this repository has not been run end to end. Environment: Linux-6.8.0-138-generic-x86_64-with-glibc2.35, 13th Gen Intel(R) Core(TM) i7-13620H (2 logical CPUs), 3,915 MB RAM, Python 3.10.12, disk flags loop1=HDD, sdb=HDD, loop6=HDD, loop4=HDD, loop2=HDD, loop0=HDD, sdc=HDD, loop7=HDD, sda=HDD, loop5=HDD, loop3=HDD. Full detail in `results/ENVIRONMENT.md`.
+Broker used for numbers in this section: **local-emulator**. This is the disk-backed Kafka-style log in `pipeline/broker.py`, not Redpanda. Docker was not available where these runs were made, so the Redpanda path in this repository has not been run end to end. Environment: Linux-6.8.0-138-generic-x86_64-with-glibc2.35, 13th Gen Intel(R) Core(TM) i7-13620H (2 logical CPUs), 3,915 MB RAM, Python 3.10.12, disk flags loop1=HDD, sdb=HDD, loop6=HDD, loop4=HDD, loop2=HDD, loop0=HDD, sdc=HDD, loop7=HDD, sda=HDD, loop5=HDD, loop3=HDD. Full detail in `results/ENVIRONMENT.md`.
 
 ### Correctness under forced crashes
 
