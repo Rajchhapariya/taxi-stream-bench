@@ -4,6 +4,10 @@ Every result file written through write_result() carries the broker that produce
 environment it ran in, so a number can never be read without knowing what it measured.
 """
 
+from pipeline.broker import (LocalBrokerEngine, broker_label, create_kafka_topic,
+                             delete_kafka_topic, get_default_local_state_dir,
+                             get_redpanda_version, get_topic_watermark_sum, kafka_usable)
+import duckdb
 import glob
 import json
 import os
@@ -17,11 +21,6 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-import duckdb
-
-from pipeline.broker import (LocalBrokerEngine, broker_label, create_kafka_topic,
-                             delete_kafka_topic, get_default_local_state_dir,
-                             get_redpanda_version, get_topic_watermark_sum, kafka_usable)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_PATH = os.path.join(BASE_DIR, "data", "yellow_tripdata_2024-01.parquet")
@@ -63,7 +62,8 @@ def _disk_kind() -> str:
         flags = []
         for path in glob.glob("/sys/block/*/queue/rotational"):
             with open(path, encoding="utf-8") as f:
-                flags.append(f"{path.split('/')[3]}={'HDD' if f.read().strip() == '1' else 'non-rotational'}")
+                flags.append(
+                    f"{path.split('/')[3]}={'HDD' if f.read().strip() == '1' else 'non-rotational'}")
         return ", ".join(flags) or "unknown"
     except OSError:
         return "unknown"
@@ -99,7 +99,8 @@ def write_result(name: str, payload: Dict[str, Any], force_local: bool = True,
                  bootstrap_servers: str = "localhost:9092", require_kafka: bool = False,
                  broker: str = "local") -> Dict[str, Any]:
     os.makedirs(RESULTS_DIR, exist_ok=True)
-    is_kafka = (broker == "kafka") or (not force_local and kafka_usable(bootstrap_servers))
+    is_kafka = (broker == "kafka") or (
+        not force_local and kafka_usable(bootstrap_servers))
     real_force_local = not is_kafka
     doc = {
         "broker": broker_label(bootstrap_servers, force_local=real_force_local, require_kafka=require_kafka),
@@ -147,7 +148,8 @@ def is_valid_parquet(path: str) -> bool:
 
 
 def lake_stats(lake_dir: str) -> Dict[str, Any]:
-    all_files = glob.glob(os.path.join(lake_dir, "**", "*.parquet"), recursive=True)
+    all_files = glob.glob(os.path.join(
+        lake_dir, "**", "*.parquet"), recursive=True)
     if not all_files:
         return {"files": 0, "rows": 0, "unique_row_ids": 0, "bytes": 0}
     # Filter out files truncated mid-write by hard-kills
@@ -157,7 +159,8 @@ def lake_stats(lake_dir: str) -> Dict[str, Any]:
     norm_files = [f.replace("\\", "/") for f in files]
     con = duckdb.connect()
     rows, unique = con.execute(
-        "SELECT count(*), count(DISTINCT row_id) FROM read_parquet(?)", [norm_files]
+        "SELECT count(*), count(DISTINCT row_id) FROM read_parquet(?)", [
+            norm_files]
     ).fetchone()
     con.close()
     return {
@@ -169,7 +172,8 @@ def lake_stats(lake_dir: str) -> Dict[str, Any]:
 
 
 def lake_row_ids(lake_dir: str) -> Set[int]:
-    all_files = glob.glob(os.path.join(lake_dir, "**", "*.parquet"), recursive=True)
+    all_files = glob.glob(os.path.join(
+        lake_dir, "**", "*.parquet"), recursive=True)
     if not all_files:
         return set()
     files = [f for f in all_files if is_valid_parquet(f)]
@@ -177,7 +181,8 @@ def lake_row_ids(lake_dir: str) -> Set[int]:
         return set()
     norm_files = [f.replace("\\", "/") for f in files]
     con = duckdb.connect()
-    ids = {r[0] for r in con.execute("SELECT DISTINCT row_id FROM read_parquet(?)", [norm_files]).fetchall()}
+    ids = {r[0] for r in con.execute(
+        "SELECT DISTINCT row_id FROM read_parquet(?)", [norm_files]).fetchall()}
     con.close()
     return ids
 

@@ -13,7 +13,7 @@ venv/
 data/yellow_tripdata_*.parquet
 data/.broker_*
 lake/
-lake_*/
+lake_*
 broker_*/
 *.tmp
 *.duckdb

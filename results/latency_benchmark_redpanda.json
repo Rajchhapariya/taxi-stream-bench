@@ -1,0 +1,298 @@
+{
+  "broker": "kafka-api@localhost:9092",
+  "generated_at": "2026-10-30T10:01:30+00:00",
+  "environment": {
+    "os": "Windows-10-10.0.26300-SP0",
+    "python": "3.11.9",
+    "cpu": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+    "cpu_count": 16,
+    "ram_mb": null,
+    "disk": "unknown",
+    "docker": "not available in this environment",
+    "redpanda": "not run",
+    "libraries": {
+      "duckdb": "1.5.6",
+      "pyarrow": "26.0.0",
+      "confluent-kafka": "2.16.1",
+      "numpy": "2.4.6"
+    }
+  },
+  "redpanda_version": "v24.2.14",
+  "parameters": {
+    "producer_rate_events_per_s": 2000.0,
+    "duration_s": 40.0,
+    "batch_timeout_s": 10.0,
+    "repetitions": 3,
+    "partitions": 6,
+    "warmup_s": 30.0,
+    "batch_size_is_per_partition": true,
+    "spec_batch_sizes": [
+      1000,
+      10000,
+      50000
+    ],
+    "note": "Sizes outside the spec set are extra points to show where the timer takes over."
+  },
+  "by_batch_size": {
+    "250": {
+      "batch_size": 250,
+      "median_p50_ms": 333.0,
+      "median_p95_ms": 1069.0,
+      "min_p95_ms": 1066.0,
+      "max_p95_ms": 1070.0,
+      "median_p99_ms": 1602.0,
+      "trials": [
+        {
+          "batch_size": 250,
+          "warmup_s": 30.0,
+          "rows_produced": 140000,
+          "rows_in_percentiles": 80250,
+          "p50_ms": 327.0,
+          "p95_ms": 1066.0,
+          "p99_ms": 1596.0,
+          "batches_closed_by_size": 556,
+          "batches_closed_by_timer": 0,
+          "partial_batches_at_end": 6,
+          "max_lag_rows": 478,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 250,
+          "warmup_s": 30.0,
+          "rows_produced": 140000,
+          "rows_in_percentiles": 80250,
+          "p50_ms": 333.0,
+          "p95_ms": 1070.0,
+          "p99_ms": 1602.0,
+          "batches_closed_by_size": 556,
+          "batches_closed_by_timer": 0,
+          "partial_batches_at_end": 6,
+          "max_lag_rows": 496,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 250,
+          "warmup_s": 30.0,
+          "rows_produced": 140000,
+          "rows_in_percentiles": 80250,
+          "p50_ms": 337.0,
+          "p95_ms": 1069.0,
+          "p99_ms": 1636.0,
+          "batches_closed_by_size": 556,
+          "batches_closed_by_timer": 0,
+          "partial_batches_at_end": 6,
+          "max_lag_rows": 485,
+          "sink_drained": true
+        }
+      ]
+    },
+    "1000": {
+      "batch_size": 1000,
+      "median_p50_ms": 1296.0,
+      "median_p95_ms": 4048.0,
+      "min_p95_ms": 4046.0,
+      "max_p95_ms": 4048.0,
+      "median_p99_ms": 6050.0,
+      "trials": [
+        {
+          "batch_size": 1000,
+          "warmup_s": 30.0,
+          "rows_produced": 140000,
+          "rows_in_percentiles": 82000,
+          "p50_ms": 1296.0,
+          "p95_ms": 4048.0,
+          "p99_ms": 6048.0,
+          "batches_closed_by_size": 137,
+          "batches_closed_by_timer": 0,
+          "partial_batches_at_end": 6,
+          "max_lag_rows": 496,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 1000,
+          "warmup_s": 30.0,
+          "rows_produced": 140000,
+          "rows_in_percentiles": 82000,
+          "p50_ms": 1295.0,
+          "p95_ms": 4048.0,
+          "p99_ms": 6053.0,
+          "batches_closed_by_size": 137,
+          "batches_closed_by_timer": 0,
+          "partial_batches_at_end": 6,
+          "max_lag_rows": 497,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 1000,
+          "warmup_s": 30.0,
+          "rows_produced": 140000,
+          "rows_in_percentiles": 82000,
+          "p50_ms": 1296.0,
+          "p95_ms": 4046.0,
+          "p99_ms": 6050.0,
+          "batches_closed_by_size": 137,
+          "batches_closed_by_timer": 0,
+          "partial_batches_at_end": 6,
+          "max_lag_rows": 411,
+          "sink_drained": true
+        }
+      ]
+    },
+    "3000": {
+      "batch_size": 3000,
+      "median_p50_ms": 3548.0,
+      "median_p95_ms": 8581.1,
+      "min_p95_ms": 8549.0,
+      "max_p95_ms": 8584.4,
+      "median_p99_ms": 9851.0,
+      "trials": [
+        {
+          "batch_size": 3000,
+          "warmup_s": 30.0,
+          "rows_produced": 140000,
+          "rows_in_percentiles": 84394,
+          "p50_ms": 3546.0,
+          "p95_ms": 8549.0,
+          "p99_ms": 9779.0,
+          "batches_closed_by_size": 32,
+          "batches_closed_by_timer": 20,
+          "partial_batches_at_end": 4,
+          "max_lag_rows": 476,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 3000,
+          "warmup_s": 30.0,
+          "rows_produced": 140000,
+          "rows_in_percentiles": 85959,
+          "p50_ms": 3548.0,
+          "p95_ms": 8581.1,
+          "p99_ms": 9851.0,
+          "batches_closed_by_size": 32,
+          "batches_closed_by_timer": 20,
+          "partial_batches_at_end": 5,
+          "max_lag_rows": 498,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 3000,
+          "warmup_s": 30.0,
+          "rows_produced": 140000,
+          "rows_in_percentiles": 85914,
+          "p50_ms": 3549.0,
+          "p95_ms": 8584.4,
+          "p99_ms": 9851.0,
+          "batches_closed_by_size": 32,
+          "batches_closed_by_timer": 20,
+          "partial_batches_at_end": 4,
+          "max_lag_rows": 500,
+          "sink_drained": true
+        }
+      ]
+    },
+    "10000": {
+      "batch_size": 10000,
+      "median_p50_ms": 5216.0,
+      "median_p95_ms": 9767.0,
+      "min_p95_ms": 9725.0,
+      "max_p95_ms": 9786.0,
+      "median_p99_ms": 10167.0,
+      "trials": [
+        {
+          "batch_size": 10000,
+          "warmup_s": 30.0,
+          "rows_produced": 140000,
+          "rows_in_percentiles": 98488,
+          "p50_ms": 5151.0,
+          "p95_ms": 9725.0,
+          "p99_ms": 10102.0,
+          "batches_closed_by_size": 0,
+          "batches_closed_by_timer": 42,
+          "partial_batches_at_end": 1,
+          "max_lag_rows": 499,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 10000,
+          "warmup_s": 30.0,
+          "rows_produced": 140000,
+          "rows_in_percentiles": 94989,
+          "p50_ms": 5216.0,
+          "p95_ms": 9767.0,
+          "p99_ms": 10167.0,
+          "batches_closed_by_size": 0,
+          "batches_closed_by_timer": 42,
+          "partial_batches_at_end": 1,
+          "max_lag_rows": 500,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 10000,
+          "warmup_s": 30.0,
+          "rows_produced": 140000,
+          "rows_in_percentiles": 98857,
+          "p50_ms": 5236.0,
+          "p95_ms": 9786.0,
+          "p99_ms": 10216.0,
+          "batches_closed_by_size": 0,
+          "batches_closed_by_timer": 42,
+          "partial_batches_at_end": 0,
+          "max_lag_rows": 499,
+          "sink_drained": true
+        }
+      ]
+    },
+    "50000": {
+      "batch_size": 50000,
+      "median_p50_ms": 5198.0,
+      "median_p95_ms": 9782.0,
+      "min_p95_ms": 9715.0,
+      "max_p95_ms": 9786.0,
+      "median_p99_ms": 10190.0,
+      "trials": [
+        {
+          "batch_size": 50000,
+          "warmup_s": 30.0,
+          "rows_produced": 140000,
+          "rows_in_percentiles": 98859,
+          "p50_ms": 5224.0,
+          "p95_ms": 9782.0,
+          "p99_ms": 10201.0,
+          "batches_closed_by_size": 0,
+          "batches_closed_by_timer": 42,
+          "partial_batches_at_end": 0,
+          "max_lag_rows": 500,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 50000,
+          "warmup_s": 30.0,
+          "rows_produced": 140000,
+          "rows_in_percentiles": 98405,
+          "p50_ms": 5198.0,
+          "p95_ms": 9715.0,
+          "p99_ms": 10127.0,
+          "batches_closed_by_size": 0,
+          "batches_closed_by_timer": 42,
+          "partial_batches_at_end": 0,
+          "max_lag_rows": 819,
+          "sink_drained": true
+        },
+        {
+          "batch_size": 50000,
+          "warmup_s": 30.0,
+          "rows_produced": 140000,
+          "rows_in_percentiles": 85176,
+          "p50_ms": 5189.0,
+          "p95_ms": 9786.0,
+          "p99_ms": 10190.0,
+          "batches_closed_by_size": 0,
+          "batches_closed_by_timer": 38,
+          "partial_batches_at_end": 5,
+          "max_lag_rows": 157,
+          "sink_drained": true
+        }
+      ]
+    }
+  }
+}
