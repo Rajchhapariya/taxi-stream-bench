@@ -452,11 +452,23 @@ def get_redpanda_version(admin_url: str = "http://localhost:9644") -> Optional[s
     """Queries Redpanda Admin HTTP endpoint if available."""
     try:
         import urllib.request
-        with urllib.request.urlopen(f"{admin_url}/v1/node_config", timeout=1.0) as resp:
+        with urllib.request.urlopen(f"{admin_url}/v1/brokers", timeout=1.5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-            return data.get("version")
+            if isinstance(data, list) and data and "version" in data[0]:
+                raw = data[0]["version"]
+                return raw.split()[0] if raw else None
     except Exception:
-        return None
+        pass
+    try:
+        res = subprocess.run(["docker", "exec", "redpanda-broker", "rpk", "version"],
+                             capture_output=True, text=True, timeout=2.0)
+        if res.returncode == 0:
+            for line in res.stdout.splitlines():
+                if line.startswith("Version:"):
+                    return line.split(":", 1)[1].strip()
+    except Exception:
+        pass
+    return None
 
 
 def get_topic_watermark_sum(topic: str, bootstrap_servers: str = "localhost:9092",

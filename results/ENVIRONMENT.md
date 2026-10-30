@@ -19,10 +19,12 @@ Hardware and software environment used for the throughput, latency, compaction, 
 |---|---|
 | **Operating System** | Microsoft Windows 11 Home Single Language (64-bit) |
 | **Kernel / OS Build** | 10.0.26300 (Build 26300) |
-| **WSL2 Runtime** | Windows Subsystem for Linux (WSL2, required for Docker Desktop) |
-| **Docker Engine Target** | Docker Desktop with Linux WSL2 engine |
-| **Redpanda Broker Version** | `docker.redpanda.com/redpandadata/redpanda:v24.2.14` (Kafka API v2/v3 compatible) |
-| **Redpanda Console** | `docker.redpanda.com/redpandadata/console:v2.7.2` |
+| **WSL2 Runtime** | Windows Subsystem for Linux (WSL2 kernel 6.18.54.1-microsoft-standard-WSL2) |
+| **Docker Desktop Version** | Docker Desktop 29.9.2 (build a82e528), Desktop UI 4.97.0 |
+| **Docker Compose Version** | Docker Compose v5.6.1 |
+| **Redpanda Broker Image** | `docker.redpanda.com/redpandadata/redpanda:v24.2.14` (pinned) |
+| **Redpanda rpk Version** | `v24.2.14` (Git ref `cd11afe2d1`, Go 1.23.1) |
+| **Redpanda Console** | `docker.redpanda.com/redpandadata/console:v2.7.2` (pinned) |
 | **Python Runtime** | Python 3.11.9 (64-bit, MSC v.1940) |
 | **Compiler / CLI Typst** | Typst 0.15.1 (9dfd3a08) |
 
